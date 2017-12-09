@@ -40542,24 +40542,65 @@ module.exports = {
 };
 
 },{}],189:[function(require,module,exports){
+
 const PIXI = require("pixi.js")
 
-const board = new PIXI.Sprite(PIXI.Texture.fromImage("assets/board.png"))
+const makeblock = _ => {
+  const container = new PIXI.Container()
+  const block = new PIXI.Sprite(PIXI.Texture.fromImage("assets/square00.png"))
+  const style = { fontFamily: "Courier", fontSize: "48", fill: 0xffffff, align: "center" }
+  const label = new PIXI.Text("", style)
 
+  container.addChild(block)
+  container.addChild(label)
+  block.anchor.set(0.5, 0.5)
+  label.anchor.set(0.5, 0.5)
+
+  return {
+    container,
+    block,
+    label
+  }
+}
+
+exports.makeblock = makeblock
+},{"pixi.js":141}],190:[function(require,module,exports){
+
+const PIXI = require("pixi.js")
+const board = new PIXI.Sprite(PIXI.Texture.fromImage("assets/board.png"))
+const style = { fontFamily: "Courier", fontSize: "48", fill: 0xffffff, align: "center" }
+const score = new PIXI.Text("0", style)
 const container = new PIXI.Container()
+const makeblock = require("./block").makeblock
 
 container.addChild(board)
+container.addChild(score)
+container.position.set(window.innerWidth / 2, window.innerHeight / 2)
+window.addEventListener("resize", _ => container.position.set(window.innerWidth / 2, window.innerHeight / 2))
+board.anchor.set(0.5, 0.5)
+score.position.set(-window.innerWidth / 7, -window.innerHeight / 5)
 
-// container.anchor.set(0.5,0.5)
+const getX = (j, i) => -120 + 80 * i
+const getY = (j, i) => -120 + 80 * j
 
-container.position.set(window.innerWidth / 2,window.innerHeight / 2)
+const grid = [[], [], [], []]
+let j = 4;
+while (j--) {
+  let i = 4;
+  while (i--) {
+    let e = makeblock()
+    e.container.position.x = getX(j, i)
+    e.container.position.y = getY(j, i)
+    grid[j][i] = e
+    container.addChild(e.container)
+  }
+}
 
-window.addEventListener("resize", _ => container.position.set(window.innerWidth / 2,window.innerHeight / 2))
+exports.score = score
+exports.board = board
+exports.container = container
 
-board.anchor.set(0.5,0.5)
-
-module.exports = container
-},{"pixi.js":141}],190:[function(require,module,exports){
+},{"./block":189,"pixi.js":141}],191:[function(require,module,exports){
 const PIXI = require("pixi.js")
 
 const app = new PIXI.Application(window.innerWidth, window.innerHeight)
@@ -40567,5 +40608,5 @@ const app = new PIXI.Application(window.innerWidth, window.innerHeight)
 document.getElementById("app").appendChild(app.view);
 window.addEventListener("resize", _ => app.renderer.resize(window.innerWidth, window.innerHeight))
 
-app.stage.addChild(require("./board"))
-},{"./board":189,"pixi.js":141}]},{},[190]);
+app.stage.addChild(require("./board").container)
+},{"./board":190,"pixi.js":141}]},{},[191]);

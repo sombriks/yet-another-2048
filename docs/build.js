@@ -1158,6 +1158,2651 @@ if ('undefined' !== typeof module) {
 }
 
 },{}],4:[function(require,module,exports){
+/*! Hammer.JS - v2.0.7 - 2016-04-22
+ * http://hammerjs.github.io/
+ *
+ * Copyright (c) 2016 Jorik Tangelder;
+ * Licensed under the MIT license */
+(function(window, document, exportName, undefined) {
+  'use strict';
+
+var VENDOR_PREFIXES = ['', 'webkit', 'Moz', 'MS', 'ms', 'o'];
+var TEST_ELEMENT = document.createElement('div');
+
+var TYPE_FUNCTION = 'function';
+
+var round = Math.round;
+var abs = Math.abs;
+var now = Date.now;
+
+/**
+ * set a timeout with a given scope
+ * @param {Function} fn
+ * @param {Number} timeout
+ * @param {Object} context
+ * @returns {number}
+ */
+function setTimeoutContext(fn, timeout, context) {
+    return setTimeout(bindFn(fn, context), timeout);
+}
+
+/**
+ * if the argument is an array, we want to execute the fn on each entry
+ * if it aint an array we don't want to do a thing.
+ * this is used by all the methods that accept a single and array argument.
+ * @param {*|Array} arg
+ * @param {String} fn
+ * @param {Object} [context]
+ * @returns {Boolean}
+ */
+function invokeArrayArg(arg, fn, context) {
+    if (Array.isArray(arg)) {
+        each(arg, context[fn], context);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * walk objects and arrays
+ * @param {Object} obj
+ * @param {Function} iterator
+ * @param {Object} context
+ */
+function each(obj, iterator, context) {
+    var i;
+
+    if (!obj) {
+        return;
+    }
+
+    if (obj.forEach) {
+        obj.forEach(iterator, context);
+    } else if (obj.length !== undefined) {
+        i = 0;
+        while (i < obj.length) {
+            iterator.call(context, obj[i], i, obj);
+            i++;
+        }
+    } else {
+        for (i in obj) {
+            obj.hasOwnProperty(i) && iterator.call(context, obj[i], i, obj);
+        }
+    }
+}
+
+/**
+ * wrap a method with a deprecation warning and stack trace
+ * @param {Function} method
+ * @param {String} name
+ * @param {String} message
+ * @returns {Function} A new function wrapping the supplied method.
+ */
+function deprecate(method, name, message) {
+    var deprecationMessage = 'DEPRECATED METHOD: ' + name + '\n' + message + ' AT \n';
+    return function() {
+        var e = new Error('get-stack-trace');
+        var stack = e && e.stack ? e.stack.replace(/^[^\(]+?[\n$]/gm, '')
+            .replace(/^\s+at\s+/gm, '')
+            .replace(/^Object.<anonymous>\s*\(/gm, '{anonymous}()@') : 'Unknown Stack Trace';
+
+        var log = window.console && (window.console.warn || window.console.log);
+        if (log) {
+            log.call(window.console, deprecationMessage, stack);
+        }
+        return method.apply(this, arguments);
+    };
+}
+
+/**
+ * extend object.
+ * means that properties in dest will be overwritten by the ones in src.
+ * @param {Object} target
+ * @param {...Object} objects_to_assign
+ * @returns {Object} target
+ */
+var assign;
+if (typeof Object.assign !== 'function') {
+    assign = function assign(target) {
+        if (target === undefined || target === null) {
+            throw new TypeError('Cannot convert undefined or null to object');
+        }
+
+        var output = Object(target);
+        for (var index = 1; index < arguments.length; index++) {
+            var source = arguments[index];
+            if (source !== undefined && source !== null) {
+                for (var nextKey in source) {
+                    if (source.hasOwnProperty(nextKey)) {
+                        output[nextKey] = source[nextKey];
+                    }
+                }
+            }
+        }
+        return output;
+    };
+} else {
+    assign = Object.assign;
+}
+
+/**
+ * extend object.
+ * means that properties in dest will be overwritten by the ones in src.
+ * @param {Object} dest
+ * @param {Object} src
+ * @param {Boolean} [merge=false]
+ * @returns {Object} dest
+ */
+var extend = deprecate(function extend(dest, src, merge) {
+    var keys = Object.keys(src);
+    var i = 0;
+    while (i < keys.length) {
+        if (!merge || (merge && dest[keys[i]] === undefined)) {
+            dest[keys[i]] = src[keys[i]];
+        }
+        i++;
+    }
+    return dest;
+}, 'extend', 'Use `assign`.');
+
+/**
+ * merge the values from src in the dest.
+ * means that properties that exist in dest will not be overwritten by src
+ * @param {Object} dest
+ * @param {Object} src
+ * @returns {Object} dest
+ */
+var merge = deprecate(function merge(dest, src) {
+    return extend(dest, src, true);
+}, 'merge', 'Use `assign`.');
+
+/**
+ * simple class inheritance
+ * @param {Function} child
+ * @param {Function} base
+ * @param {Object} [properties]
+ */
+function inherit(child, base, properties) {
+    var baseP = base.prototype,
+        childP;
+
+    childP = child.prototype = Object.create(baseP);
+    childP.constructor = child;
+    childP._super = baseP;
+
+    if (properties) {
+        assign(childP, properties);
+    }
+}
+
+/**
+ * simple function bind
+ * @param {Function} fn
+ * @param {Object} context
+ * @returns {Function}
+ */
+function bindFn(fn, context) {
+    return function boundFn() {
+        return fn.apply(context, arguments);
+    };
+}
+
+/**
+ * let a boolean value also be a function that must return a boolean
+ * this first item in args will be used as the context
+ * @param {Boolean|Function} val
+ * @param {Array} [args]
+ * @returns {Boolean}
+ */
+function boolOrFn(val, args) {
+    if (typeof val == TYPE_FUNCTION) {
+        return val.apply(args ? args[0] || undefined : undefined, args);
+    }
+    return val;
+}
+
+/**
+ * use the val2 when val1 is undefined
+ * @param {*} val1
+ * @param {*} val2
+ * @returns {*}
+ */
+function ifUndefined(val1, val2) {
+    return (val1 === undefined) ? val2 : val1;
+}
+
+/**
+ * addEventListener with multiple events at once
+ * @param {EventTarget} target
+ * @param {String} types
+ * @param {Function} handler
+ */
+function addEventListeners(target, types, handler) {
+    each(splitStr(types), function(type) {
+        target.addEventListener(type, handler, false);
+    });
+}
+
+/**
+ * removeEventListener with multiple events at once
+ * @param {EventTarget} target
+ * @param {String} types
+ * @param {Function} handler
+ */
+function removeEventListeners(target, types, handler) {
+    each(splitStr(types), function(type) {
+        target.removeEventListener(type, handler, false);
+    });
+}
+
+/**
+ * find if a node is in the given parent
+ * @method hasParent
+ * @param {HTMLElement} node
+ * @param {HTMLElement} parent
+ * @return {Boolean} found
+ */
+function hasParent(node, parent) {
+    while (node) {
+        if (node == parent) {
+            return true;
+        }
+        node = node.parentNode;
+    }
+    return false;
+}
+
+/**
+ * small indexOf wrapper
+ * @param {String} str
+ * @param {String} find
+ * @returns {Boolean} found
+ */
+function inStr(str, find) {
+    return str.indexOf(find) > -1;
+}
+
+/**
+ * split string on whitespace
+ * @param {String} str
+ * @returns {Array} words
+ */
+function splitStr(str) {
+    return str.trim().split(/\s+/g);
+}
+
+/**
+ * find if a array contains the object using indexOf or a simple polyFill
+ * @param {Array} src
+ * @param {String} find
+ * @param {String} [findByKey]
+ * @return {Boolean|Number} false when not found, or the index
+ */
+function inArray(src, find, findByKey) {
+    if (src.indexOf && !findByKey) {
+        return src.indexOf(find);
+    } else {
+        var i = 0;
+        while (i < src.length) {
+            if ((findByKey && src[i][findByKey] == find) || (!findByKey && src[i] === find)) {
+                return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+}
+
+/**
+ * convert array-like objects to real arrays
+ * @param {Object} obj
+ * @returns {Array}
+ */
+function toArray(obj) {
+    return Array.prototype.slice.call(obj, 0);
+}
+
+/**
+ * unique array with objects based on a key (like 'id') or just by the array's value
+ * @param {Array} src [{id:1},{id:2},{id:1}]
+ * @param {String} [key]
+ * @param {Boolean} [sort=False]
+ * @returns {Array} [{id:1},{id:2}]
+ */
+function uniqueArray(src, key, sort) {
+    var results = [];
+    var values = [];
+    var i = 0;
+
+    while (i < src.length) {
+        var val = key ? src[i][key] : src[i];
+        if (inArray(values, val) < 0) {
+            results.push(src[i]);
+        }
+        values[i] = val;
+        i++;
+    }
+
+    if (sort) {
+        if (!key) {
+            results = results.sort();
+        } else {
+            results = results.sort(function sortUniqueArray(a, b) {
+                return a[key] > b[key];
+            });
+        }
+    }
+
+    return results;
+}
+
+/**
+ * get the prefixed property
+ * @param {Object} obj
+ * @param {String} property
+ * @returns {String|Undefined} prefixed
+ */
+function prefixed(obj, property) {
+    var prefix, prop;
+    var camelProp = property[0].toUpperCase() + property.slice(1);
+
+    var i = 0;
+    while (i < VENDOR_PREFIXES.length) {
+        prefix = VENDOR_PREFIXES[i];
+        prop = (prefix) ? prefix + camelProp : property;
+
+        if (prop in obj) {
+            return prop;
+        }
+        i++;
+    }
+    return undefined;
+}
+
+/**
+ * get a unique id
+ * @returns {number} uniqueId
+ */
+var _uniqueId = 1;
+function uniqueId() {
+    return _uniqueId++;
+}
+
+/**
+ * get the window object of an element
+ * @param {HTMLElement} element
+ * @returns {DocumentView|Window}
+ */
+function getWindowForElement(element) {
+    var doc = element.ownerDocument || element;
+    return (doc.defaultView || doc.parentWindow || window);
+}
+
+var MOBILE_REGEX = /mobile|tablet|ip(ad|hone|od)|android/i;
+
+var SUPPORT_TOUCH = ('ontouchstart' in window);
+var SUPPORT_POINTER_EVENTS = prefixed(window, 'PointerEvent') !== undefined;
+var SUPPORT_ONLY_TOUCH = SUPPORT_TOUCH && MOBILE_REGEX.test(navigator.userAgent);
+
+var INPUT_TYPE_TOUCH = 'touch';
+var INPUT_TYPE_PEN = 'pen';
+var INPUT_TYPE_MOUSE = 'mouse';
+var INPUT_TYPE_KINECT = 'kinect';
+
+var COMPUTE_INTERVAL = 25;
+
+var INPUT_START = 1;
+var INPUT_MOVE = 2;
+var INPUT_END = 4;
+var INPUT_CANCEL = 8;
+
+var DIRECTION_NONE = 1;
+var DIRECTION_LEFT = 2;
+var DIRECTION_RIGHT = 4;
+var DIRECTION_UP = 8;
+var DIRECTION_DOWN = 16;
+
+var DIRECTION_HORIZONTAL = DIRECTION_LEFT | DIRECTION_RIGHT;
+var DIRECTION_VERTICAL = DIRECTION_UP | DIRECTION_DOWN;
+var DIRECTION_ALL = DIRECTION_HORIZONTAL | DIRECTION_VERTICAL;
+
+var PROPS_XY = ['x', 'y'];
+var PROPS_CLIENT_XY = ['clientX', 'clientY'];
+
+/**
+ * create new input type manager
+ * @param {Manager} manager
+ * @param {Function} callback
+ * @returns {Input}
+ * @constructor
+ */
+function Input(manager, callback) {
+    var self = this;
+    this.manager = manager;
+    this.callback = callback;
+    this.element = manager.element;
+    this.target = manager.options.inputTarget;
+
+    // smaller wrapper around the handler, for the scope and the enabled state of the manager,
+    // so when disabled the input events are completely bypassed.
+    this.domHandler = function(ev) {
+        if (boolOrFn(manager.options.enable, [manager])) {
+            self.handler(ev);
+        }
+    };
+
+    this.init();
+
+}
+
+Input.prototype = {
+    /**
+     * should handle the inputEvent data and trigger the callback
+     * @virtual
+     */
+    handler: function() { },
+
+    /**
+     * bind the events
+     */
+    init: function() {
+        this.evEl && addEventListeners(this.element, this.evEl, this.domHandler);
+        this.evTarget && addEventListeners(this.target, this.evTarget, this.domHandler);
+        this.evWin && addEventListeners(getWindowForElement(this.element), this.evWin, this.domHandler);
+    },
+
+    /**
+     * unbind the events
+     */
+    destroy: function() {
+        this.evEl && removeEventListeners(this.element, this.evEl, this.domHandler);
+        this.evTarget && removeEventListeners(this.target, this.evTarget, this.domHandler);
+        this.evWin && removeEventListeners(getWindowForElement(this.element), this.evWin, this.domHandler);
+    }
+};
+
+/**
+ * create new input type manager
+ * called by the Manager constructor
+ * @param {Hammer} manager
+ * @returns {Input}
+ */
+function createInputInstance(manager) {
+    var Type;
+    var inputClass = manager.options.inputClass;
+
+    if (inputClass) {
+        Type = inputClass;
+    } else if (SUPPORT_POINTER_EVENTS) {
+        Type = PointerEventInput;
+    } else if (SUPPORT_ONLY_TOUCH) {
+        Type = TouchInput;
+    } else if (!SUPPORT_TOUCH) {
+        Type = MouseInput;
+    } else {
+        Type = TouchMouseInput;
+    }
+    return new (Type)(manager, inputHandler);
+}
+
+/**
+ * handle input events
+ * @param {Manager} manager
+ * @param {String} eventType
+ * @param {Object} input
+ */
+function inputHandler(manager, eventType, input) {
+    var pointersLen = input.pointers.length;
+    var changedPointersLen = input.changedPointers.length;
+    var isFirst = (eventType & INPUT_START && (pointersLen - changedPointersLen === 0));
+    var isFinal = (eventType & (INPUT_END | INPUT_CANCEL) && (pointersLen - changedPointersLen === 0));
+
+    input.isFirst = !!isFirst;
+    input.isFinal = !!isFinal;
+
+    if (isFirst) {
+        manager.session = {};
+    }
+
+    // source event is the normalized value of the domEvents
+    // like 'touchstart, mouseup, pointerdown'
+    input.eventType = eventType;
+
+    // compute scale, rotation etc
+    computeInputData(manager, input);
+
+    // emit secret event
+    manager.emit('hammer.input', input);
+
+    manager.recognize(input);
+    manager.session.prevInput = input;
+}
+
+/**
+ * extend the data with some usable properties like scale, rotate, velocity etc
+ * @param {Object} manager
+ * @param {Object} input
+ */
+function computeInputData(manager, input) {
+    var session = manager.session;
+    var pointers = input.pointers;
+    var pointersLength = pointers.length;
+
+    // store the first input to calculate the distance and direction
+    if (!session.firstInput) {
+        session.firstInput = simpleCloneInputData(input);
+    }
+
+    // to compute scale and rotation we need to store the multiple touches
+    if (pointersLength > 1 && !session.firstMultiple) {
+        session.firstMultiple = simpleCloneInputData(input);
+    } else if (pointersLength === 1) {
+        session.firstMultiple = false;
+    }
+
+    var firstInput = session.firstInput;
+    var firstMultiple = session.firstMultiple;
+    var offsetCenter = firstMultiple ? firstMultiple.center : firstInput.center;
+
+    var center = input.center = getCenter(pointers);
+    input.timeStamp = now();
+    input.deltaTime = input.timeStamp - firstInput.timeStamp;
+
+    input.angle = getAngle(offsetCenter, center);
+    input.distance = getDistance(offsetCenter, center);
+
+    computeDeltaXY(session, input);
+    input.offsetDirection = getDirection(input.deltaX, input.deltaY);
+
+    var overallVelocity = getVelocity(input.deltaTime, input.deltaX, input.deltaY);
+    input.overallVelocityX = overallVelocity.x;
+    input.overallVelocityY = overallVelocity.y;
+    input.overallVelocity = (abs(overallVelocity.x) > abs(overallVelocity.y)) ? overallVelocity.x : overallVelocity.y;
+
+    input.scale = firstMultiple ? getScale(firstMultiple.pointers, pointers) : 1;
+    input.rotation = firstMultiple ? getRotation(firstMultiple.pointers, pointers) : 0;
+
+    input.maxPointers = !session.prevInput ? input.pointers.length : ((input.pointers.length >
+        session.prevInput.maxPointers) ? input.pointers.length : session.prevInput.maxPointers);
+
+    computeIntervalInputData(session, input);
+
+    // find the correct target
+    var target = manager.element;
+    if (hasParent(input.srcEvent.target, target)) {
+        target = input.srcEvent.target;
+    }
+    input.target = target;
+}
+
+function computeDeltaXY(session, input) {
+    var center = input.center;
+    var offset = session.offsetDelta || {};
+    var prevDelta = session.prevDelta || {};
+    var prevInput = session.prevInput || {};
+
+    if (input.eventType === INPUT_START || prevInput.eventType === INPUT_END) {
+        prevDelta = session.prevDelta = {
+            x: prevInput.deltaX || 0,
+            y: prevInput.deltaY || 0
+        };
+
+        offset = session.offsetDelta = {
+            x: center.x,
+            y: center.y
+        };
+    }
+
+    input.deltaX = prevDelta.x + (center.x - offset.x);
+    input.deltaY = prevDelta.y + (center.y - offset.y);
+}
+
+/**
+ * velocity is calculated every x ms
+ * @param {Object} session
+ * @param {Object} input
+ */
+function computeIntervalInputData(session, input) {
+    var last = session.lastInterval || input,
+        deltaTime = input.timeStamp - last.timeStamp,
+        velocity, velocityX, velocityY, direction;
+
+    if (input.eventType != INPUT_CANCEL && (deltaTime > COMPUTE_INTERVAL || last.velocity === undefined)) {
+        var deltaX = input.deltaX - last.deltaX;
+        var deltaY = input.deltaY - last.deltaY;
+
+        var v = getVelocity(deltaTime, deltaX, deltaY);
+        velocityX = v.x;
+        velocityY = v.y;
+        velocity = (abs(v.x) > abs(v.y)) ? v.x : v.y;
+        direction = getDirection(deltaX, deltaY);
+
+        session.lastInterval = input;
+    } else {
+        // use latest velocity info if it doesn't overtake a minimum period
+        velocity = last.velocity;
+        velocityX = last.velocityX;
+        velocityY = last.velocityY;
+        direction = last.direction;
+    }
+
+    input.velocity = velocity;
+    input.velocityX = velocityX;
+    input.velocityY = velocityY;
+    input.direction = direction;
+}
+
+/**
+ * create a simple clone from the input used for storage of firstInput and firstMultiple
+ * @param {Object} input
+ * @returns {Object} clonedInputData
+ */
+function simpleCloneInputData(input) {
+    // make a simple copy of the pointers because we will get a reference if we don't
+    // we only need clientXY for the calculations
+    var pointers = [];
+    var i = 0;
+    while (i < input.pointers.length) {
+        pointers[i] = {
+            clientX: round(input.pointers[i].clientX),
+            clientY: round(input.pointers[i].clientY)
+        };
+        i++;
+    }
+
+    return {
+        timeStamp: now(),
+        pointers: pointers,
+        center: getCenter(pointers),
+        deltaX: input.deltaX,
+        deltaY: input.deltaY
+    };
+}
+
+/**
+ * get the center of all the pointers
+ * @param {Array} pointers
+ * @return {Object} center contains `x` and `y` properties
+ */
+function getCenter(pointers) {
+    var pointersLength = pointers.length;
+
+    // no need to loop when only one touch
+    if (pointersLength === 1) {
+        return {
+            x: round(pointers[0].clientX),
+            y: round(pointers[0].clientY)
+        };
+    }
+
+    var x = 0, y = 0, i = 0;
+    while (i < pointersLength) {
+        x += pointers[i].clientX;
+        y += pointers[i].clientY;
+        i++;
+    }
+
+    return {
+        x: round(x / pointersLength),
+        y: round(y / pointersLength)
+    };
+}
+
+/**
+ * calculate the velocity between two points. unit is in px per ms.
+ * @param {Number} deltaTime
+ * @param {Number} x
+ * @param {Number} y
+ * @return {Object} velocity `x` and `y`
+ */
+function getVelocity(deltaTime, x, y) {
+    return {
+        x: x / deltaTime || 0,
+        y: y / deltaTime || 0
+    };
+}
+
+/**
+ * get the direction between two points
+ * @param {Number} x
+ * @param {Number} y
+ * @return {Number} direction
+ */
+function getDirection(x, y) {
+    if (x === y) {
+        return DIRECTION_NONE;
+    }
+
+    if (abs(x) >= abs(y)) {
+        return x < 0 ? DIRECTION_LEFT : DIRECTION_RIGHT;
+    }
+    return y < 0 ? DIRECTION_UP : DIRECTION_DOWN;
+}
+
+/**
+ * calculate the absolute distance between two points
+ * @param {Object} p1 {x, y}
+ * @param {Object} p2 {x, y}
+ * @param {Array} [props] containing x and y keys
+ * @return {Number} distance
+ */
+function getDistance(p1, p2, props) {
+    if (!props) {
+        props = PROPS_XY;
+    }
+    var x = p2[props[0]] - p1[props[0]],
+        y = p2[props[1]] - p1[props[1]];
+
+    return Math.sqrt((x * x) + (y * y));
+}
+
+/**
+ * calculate the angle between two coordinates
+ * @param {Object} p1
+ * @param {Object} p2
+ * @param {Array} [props] containing x and y keys
+ * @return {Number} angle
+ */
+function getAngle(p1, p2, props) {
+    if (!props) {
+        props = PROPS_XY;
+    }
+    var x = p2[props[0]] - p1[props[0]],
+        y = p2[props[1]] - p1[props[1]];
+    return Math.atan2(y, x) * 180 / Math.PI;
+}
+
+/**
+ * calculate the rotation degrees between two pointersets
+ * @param {Array} start array of pointers
+ * @param {Array} end array of pointers
+ * @return {Number} rotation
+ */
+function getRotation(start, end) {
+    return getAngle(end[1], end[0], PROPS_CLIENT_XY) + getAngle(start[1], start[0], PROPS_CLIENT_XY);
+}
+
+/**
+ * calculate the scale factor between two pointersets
+ * no scale is 1, and goes down to 0 when pinched together, and bigger when pinched out
+ * @param {Array} start array of pointers
+ * @param {Array} end array of pointers
+ * @return {Number} scale
+ */
+function getScale(start, end) {
+    return getDistance(end[0], end[1], PROPS_CLIENT_XY) / getDistance(start[0], start[1], PROPS_CLIENT_XY);
+}
+
+var MOUSE_INPUT_MAP = {
+    mousedown: INPUT_START,
+    mousemove: INPUT_MOVE,
+    mouseup: INPUT_END
+};
+
+var MOUSE_ELEMENT_EVENTS = 'mousedown';
+var MOUSE_WINDOW_EVENTS = 'mousemove mouseup';
+
+/**
+ * Mouse events input
+ * @constructor
+ * @extends Input
+ */
+function MouseInput() {
+    this.evEl = MOUSE_ELEMENT_EVENTS;
+    this.evWin = MOUSE_WINDOW_EVENTS;
+
+    this.pressed = false; // mousedown state
+
+    Input.apply(this, arguments);
+}
+
+inherit(MouseInput, Input, {
+    /**
+     * handle mouse events
+     * @param {Object} ev
+     */
+    handler: function MEhandler(ev) {
+        var eventType = MOUSE_INPUT_MAP[ev.type];
+
+        // on start we want to have the left mouse button down
+        if (eventType & INPUT_START && ev.button === 0) {
+            this.pressed = true;
+        }
+
+        if (eventType & INPUT_MOVE && ev.which !== 1) {
+            eventType = INPUT_END;
+        }
+
+        // mouse must be down
+        if (!this.pressed) {
+            return;
+        }
+
+        if (eventType & INPUT_END) {
+            this.pressed = false;
+        }
+
+        this.callback(this.manager, eventType, {
+            pointers: [ev],
+            changedPointers: [ev],
+            pointerType: INPUT_TYPE_MOUSE,
+            srcEvent: ev
+        });
+    }
+});
+
+var POINTER_INPUT_MAP = {
+    pointerdown: INPUT_START,
+    pointermove: INPUT_MOVE,
+    pointerup: INPUT_END,
+    pointercancel: INPUT_CANCEL,
+    pointerout: INPUT_CANCEL
+};
+
+// in IE10 the pointer types is defined as an enum
+var IE10_POINTER_TYPE_ENUM = {
+    2: INPUT_TYPE_TOUCH,
+    3: INPUT_TYPE_PEN,
+    4: INPUT_TYPE_MOUSE,
+    5: INPUT_TYPE_KINECT // see https://twitter.com/jacobrossi/status/480596438489890816
+};
+
+var POINTER_ELEMENT_EVENTS = 'pointerdown';
+var POINTER_WINDOW_EVENTS = 'pointermove pointerup pointercancel';
+
+// IE10 has prefixed support, and case-sensitive
+if (window.MSPointerEvent && !window.PointerEvent) {
+    POINTER_ELEMENT_EVENTS = 'MSPointerDown';
+    POINTER_WINDOW_EVENTS = 'MSPointerMove MSPointerUp MSPointerCancel';
+}
+
+/**
+ * Pointer events input
+ * @constructor
+ * @extends Input
+ */
+function PointerEventInput() {
+    this.evEl = POINTER_ELEMENT_EVENTS;
+    this.evWin = POINTER_WINDOW_EVENTS;
+
+    Input.apply(this, arguments);
+
+    this.store = (this.manager.session.pointerEvents = []);
+}
+
+inherit(PointerEventInput, Input, {
+    /**
+     * handle mouse events
+     * @param {Object} ev
+     */
+    handler: function PEhandler(ev) {
+        var store = this.store;
+        var removePointer = false;
+
+        var eventTypeNormalized = ev.type.toLowerCase().replace('ms', '');
+        var eventType = POINTER_INPUT_MAP[eventTypeNormalized];
+        var pointerType = IE10_POINTER_TYPE_ENUM[ev.pointerType] || ev.pointerType;
+
+        var isTouch = (pointerType == INPUT_TYPE_TOUCH);
+
+        // get index of the event in the store
+        var storeIndex = inArray(store, ev.pointerId, 'pointerId');
+
+        // start and mouse must be down
+        if (eventType & INPUT_START && (ev.button === 0 || isTouch)) {
+            if (storeIndex < 0) {
+                store.push(ev);
+                storeIndex = store.length - 1;
+            }
+        } else if (eventType & (INPUT_END | INPUT_CANCEL)) {
+            removePointer = true;
+        }
+
+        // it not found, so the pointer hasn't been down (so it's probably a hover)
+        if (storeIndex < 0) {
+            return;
+        }
+
+        // update the event in the store
+        store[storeIndex] = ev;
+
+        this.callback(this.manager, eventType, {
+            pointers: store,
+            changedPointers: [ev],
+            pointerType: pointerType,
+            srcEvent: ev
+        });
+
+        if (removePointer) {
+            // remove from the store
+            store.splice(storeIndex, 1);
+        }
+    }
+});
+
+var SINGLE_TOUCH_INPUT_MAP = {
+    touchstart: INPUT_START,
+    touchmove: INPUT_MOVE,
+    touchend: INPUT_END,
+    touchcancel: INPUT_CANCEL
+};
+
+var SINGLE_TOUCH_TARGET_EVENTS = 'touchstart';
+var SINGLE_TOUCH_WINDOW_EVENTS = 'touchstart touchmove touchend touchcancel';
+
+/**
+ * Touch events input
+ * @constructor
+ * @extends Input
+ */
+function SingleTouchInput() {
+    this.evTarget = SINGLE_TOUCH_TARGET_EVENTS;
+    this.evWin = SINGLE_TOUCH_WINDOW_EVENTS;
+    this.started = false;
+
+    Input.apply(this, arguments);
+}
+
+inherit(SingleTouchInput, Input, {
+    handler: function TEhandler(ev) {
+        var type = SINGLE_TOUCH_INPUT_MAP[ev.type];
+
+        // should we handle the touch events?
+        if (type === INPUT_START) {
+            this.started = true;
+        }
+
+        if (!this.started) {
+            return;
+        }
+
+        var touches = normalizeSingleTouches.call(this, ev, type);
+
+        // when done, reset the started state
+        if (type & (INPUT_END | INPUT_CANCEL) && touches[0].length - touches[1].length === 0) {
+            this.started = false;
+        }
+
+        this.callback(this.manager, type, {
+            pointers: touches[0],
+            changedPointers: touches[1],
+            pointerType: INPUT_TYPE_TOUCH,
+            srcEvent: ev
+        });
+    }
+});
+
+/**
+ * @this {TouchInput}
+ * @param {Object} ev
+ * @param {Number} type flag
+ * @returns {undefined|Array} [all, changed]
+ */
+function normalizeSingleTouches(ev, type) {
+    var all = toArray(ev.touches);
+    var changed = toArray(ev.changedTouches);
+
+    if (type & (INPUT_END | INPUT_CANCEL)) {
+        all = uniqueArray(all.concat(changed), 'identifier', true);
+    }
+
+    return [all, changed];
+}
+
+var TOUCH_INPUT_MAP = {
+    touchstart: INPUT_START,
+    touchmove: INPUT_MOVE,
+    touchend: INPUT_END,
+    touchcancel: INPUT_CANCEL
+};
+
+var TOUCH_TARGET_EVENTS = 'touchstart touchmove touchend touchcancel';
+
+/**
+ * Multi-user touch events input
+ * @constructor
+ * @extends Input
+ */
+function TouchInput() {
+    this.evTarget = TOUCH_TARGET_EVENTS;
+    this.targetIds = {};
+
+    Input.apply(this, arguments);
+}
+
+inherit(TouchInput, Input, {
+    handler: function MTEhandler(ev) {
+        var type = TOUCH_INPUT_MAP[ev.type];
+        var touches = getTouches.call(this, ev, type);
+        if (!touches) {
+            return;
+        }
+
+        this.callback(this.manager, type, {
+            pointers: touches[0],
+            changedPointers: touches[1],
+            pointerType: INPUT_TYPE_TOUCH,
+            srcEvent: ev
+        });
+    }
+});
+
+/**
+ * @this {TouchInput}
+ * @param {Object} ev
+ * @param {Number} type flag
+ * @returns {undefined|Array} [all, changed]
+ */
+function getTouches(ev, type) {
+    var allTouches = toArray(ev.touches);
+    var targetIds = this.targetIds;
+
+    // when there is only one touch, the process can be simplified
+    if (type & (INPUT_START | INPUT_MOVE) && allTouches.length === 1) {
+        targetIds[allTouches[0].identifier] = true;
+        return [allTouches, allTouches];
+    }
+
+    var i,
+        targetTouches,
+        changedTouches = toArray(ev.changedTouches),
+        changedTargetTouches = [],
+        target = this.target;
+
+    // get target touches from touches
+    targetTouches = allTouches.filter(function(touch) {
+        return hasParent(touch.target, target);
+    });
+
+    // collect touches
+    if (type === INPUT_START) {
+        i = 0;
+        while (i < targetTouches.length) {
+            targetIds[targetTouches[i].identifier] = true;
+            i++;
+        }
+    }
+
+    // filter changed touches to only contain touches that exist in the collected target ids
+    i = 0;
+    while (i < changedTouches.length) {
+        if (targetIds[changedTouches[i].identifier]) {
+            changedTargetTouches.push(changedTouches[i]);
+        }
+
+        // cleanup removed touches
+        if (type & (INPUT_END | INPUT_CANCEL)) {
+            delete targetIds[changedTouches[i].identifier];
+        }
+        i++;
+    }
+
+    if (!changedTargetTouches.length) {
+        return;
+    }
+
+    return [
+        // merge targetTouches with changedTargetTouches so it contains ALL touches, including 'end' and 'cancel'
+        uniqueArray(targetTouches.concat(changedTargetTouches), 'identifier', true),
+        changedTargetTouches
+    ];
+}
+
+/**
+ * Combined touch and mouse input
+ *
+ * Touch has a higher priority then mouse, and while touching no mouse events are allowed.
+ * This because touch devices also emit mouse events while doing a touch.
+ *
+ * @constructor
+ * @extends Input
+ */
+
+var DEDUP_TIMEOUT = 2500;
+var DEDUP_DISTANCE = 25;
+
+function TouchMouseInput() {
+    Input.apply(this, arguments);
+
+    var handler = bindFn(this.handler, this);
+    this.touch = new TouchInput(this.manager, handler);
+    this.mouse = new MouseInput(this.manager, handler);
+
+    this.primaryTouch = null;
+    this.lastTouches = [];
+}
+
+inherit(TouchMouseInput, Input, {
+    /**
+     * handle mouse and touch events
+     * @param {Hammer} manager
+     * @param {String} inputEvent
+     * @param {Object} inputData
+     */
+    handler: function TMEhandler(manager, inputEvent, inputData) {
+        var isTouch = (inputData.pointerType == INPUT_TYPE_TOUCH),
+            isMouse = (inputData.pointerType == INPUT_TYPE_MOUSE);
+
+        if (isMouse && inputData.sourceCapabilities && inputData.sourceCapabilities.firesTouchEvents) {
+            return;
+        }
+
+        // when we're in a touch event, record touches to  de-dupe synthetic mouse event
+        if (isTouch) {
+            recordTouches.call(this, inputEvent, inputData);
+        } else if (isMouse && isSyntheticEvent.call(this, inputData)) {
+            return;
+        }
+
+        this.callback(manager, inputEvent, inputData);
+    },
+
+    /**
+     * remove the event listeners
+     */
+    destroy: function destroy() {
+        this.touch.destroy();
+        this.mouse.destroy();
+    }
+});
+
+function recordTouches(eventType, eventData) {
+    if (eventType & INPUT_START) {
+        this.primaryTouch = eventData.changedPointers[0].identifier;
+        setLastTouch.call(this, eventData);
+    } else if (eventType & (INPUT_END | INPUT_CANCEL)) {
+        setLastTouch.call(this, eventData);
+    }
+}
+
+function setLastTouch(eventData) {
+    var touch = eventData.changedPointers[0];
+
+    if (touch.identifier === this.primaryTouch) {
+        var lastTouch = {x: touch.clientX, y: touch.clientY};
+        this.lastTouches.push(lastTouch);
+        var lts = this.lastTouches;
+        var removeLastTouch = function() {
+            var i = lts.indexOf(lastTouch);
+            if (i > -1) {
+                lts.splice(i, 1);
+            }
+        };
+        setTimeout(removeLastTouch, DEDUP_TIMEOUT);
+    }
+}
+
+function isSyntheticEvent(eventData) {
+    var x = eventData.srcEvent.clientX, y = eventData.srcEvent.clientY;
+    for (var i = 0; i < this.lastTouches.length; i++) {
+        var t = this.lastTouches[i];
+        var dx = Math.abs(x - t.x), dy = Math.abs(y - t.y);
+        if (dx <= DEDUP_DISTANCE && dy <= DEDUP_DISTANCE) {
+            return true;
+        }
+    }
+    return false;
+}
+
+var PREFIXED_TOUCH_ACTION = prefixed(TEST_ELEMENT.style, 'touchAction');
+var NATIVE_TOUCH_ACTION = PREFIXED_TOUCH_ACTION !== undefined;
+
+// magical touchAction value
+var TOUCH_ACTION_COMPUTE = 'compute';
+var TOUCH_ACTION_AUTO = 'auto';
+var TOUCH_ACTION_MANIPULATION = 'manipulation'; // not implemented
+var TOUCH_ACTION_NONE = 'none';
+var TOUCH_ACTION_PAN_X = 'pan-x';
+var TOUCH_ACTION_PAN_Y = 'pan-y';
+var TOUCH_ACTION_MAP = getTouchActionProps();
+
+/**
+ * Touch Action
+ * sets the touchAction property or uses the js alternative
+ * @param {Manager} manager
+ * @param {String} value
+ * @constructor
+ */
+function TouchAction(manager, value) {
+    this.manager = manager;
+    this.set(value);
+}
+
+TouchAction.prototype = {
+    /**
+     * set the touchAction value on the element or enable the polyfill
+     * @param {String} value
+     */
+    set: function(value) {
+        // find out the touch-action by the event handlers
+        if (value == TOUCH_ACTION_COMPUTE) {
+            value = this.compute();
+        }
+
+        if (NATIVE_TOUCH_ACTION && this.manager.element.style && TOUCH_ACTION_MAP[value]) {
+            this.manager.element.style[PREFIXED_TOUCH_ACTION] = value;
+        }
+        this.actions = value.toLowerCase().trim();
+    },
+
+    /**
+     * just re-set the touchAction value
+     */
+    update: function() {
+        this.set(this.manager.options.touchAction);
+    },
+
+    /**
+     * compute the value for the touchAction property based on the recognizer's settings
+     * @returns {String} value
+     */
+    compute: function() {
+        var actions = [];
+        each(this.manager.recognizers, function(recognizer) {
+            if (boolOrFn(recognizer.options.enable, [recognizer])) {
+                actions = actions.concat(recognizer.getTouchAction());
+            }
+        });
+        return cleanTouchActions(actions.join(' '));
+    },
+
+    /**
+     * this method is called on each input cycle and provides the preventing of the browser behavior
+     * @param {Object} input
+     */
+    preventDefaults: function(input) {
+        var srcEvent = input.srcEvent;
+        var direction = input.offsetDirection;
+
+        // if the touch action did prevented once this session
+        if (this.manager.session.prevented) {
+            srcEvent.preventDefault();
+            return;
+        }
+
+        var actions = this.actions;
+        var hasNone = inStr(actions, TOUCH_ACTION_NONE) && !TOUCH_ACTION_MAP[TOUCH_ACTION_NONE];
+        var hasPanY = inStr(actions, TOUCH_ACTION_PAN_Y) && !TOUCH_ACTION_MAP[TOUCH_ACTION_PAN_Y];
+        var hasPanX = inStr(actions, TOUCH_ACTION_PAN_X) && !TOUCH_ACTION_MAP[TOUCH_ACTION_PAN_X];
+
+        if (hasNone) {
+            //do not prevent defaults if this is a tap gesture
+
+            var isTapPointer = input.pointers.length === 1;
+            var isTapMovement = input.distance < 2;
+            var isTapTouchTime = input.deltaTime < 250;
+
+            if (isTapPointer && isTapMovement && isTapTouchTime) {
+                return;
+            }
+        }
+
+        if (hasPanX && hasPanY) {
+            // `pan-x pan-y` means browser handles all scrolling/panning, do not prevent
+            return;
+        }
+
+        if (hasNone ||
+            (hasPanY && direction & DIRECTION_HORIZONTAL) ||
+            (hasPanX && direction & DIRECTION_VERTICAL)) {
+            return this.preventSrc(srcEvent);
+        }
+    },
+
+    /**
+     * call preventDefault to prevent the browser's default behavior (scrolling in most cases)
+     * @param {Object} srcEvent
+     */
+    preventSrc: function(srcEvent) {
+        this.manager.session.prevented = true;
+        srcEvent.preventDefault();
+    }
+};
+
+/**
+ * when the touchActions are collected they are not a valid value, so we need to clean things up. *
+ * @param {String} actions
+ * @returns {*}
+ */
+function cleanTouchActions(actions) {
+    // none
+    if (inStr(actions, TOUCH_ACTION_NONE)) {
+        return TOUCH_ACTION_NONE;
+    }
+
+    var hasPanX = inStr(actions, TOUCH_ACTION_PAN_X);
+    var hasPanY = inStr(actions, TOUCH_ACTION_PAN_Y);
+
+    // if both pan-x and pan-y are set (different recognizers
+    // for different directions, e.g. horizontal pan but vertical swipe?)
+    // we need none (as otherwise with pan-x pan-y combined none of these
+    // recognizers will work, since the browser would handle all panning
+    if (hasPanX && hasPanY) {
+        return TOUCH_ACTION_NONE;
+    }
+
+    // pan-x OR pan-y
+    if (hasPanX || hasPanY) {
+        return hasPanX ? TOUCH_ACTION_PAN_X : TOUCH_ACTION_PAN_Y;
+    }
+
+    // manipulation
+    if (inStr(actions, TOUCH_ACTION_MANIPULATION)) {
+        return TOUCH_ACTION_MANIPULATION;
+    }
+
+    return TOUCH_ACTION_AUTO;
+}
+
+function getTouchActionProps() {
+    if (!NATIVE_TOUCH_ACTION) {
+        return false;
+    }
+    var touchMap = {};
+    var cssSupports = window.CSS && window.CSS.supports;
+    ['auto', 'manipulation', 'pan-y', 'pan-x', 'pan-x pan-y', 'none'].forEach(function(val) {
+
+        // If css.supports is not supported but there is native touch-action assume it supports
+        // all values. This is the case for IE 10 and 11.
+        touchMap[val] = cssSupports ? window.CSS.supports('touch-action', val) : true;
+    });
+    return touchMap;
+}
+
+/**
+ * Recognizer flow explained; *
+ * All recognizers have the initial state of POSSIBLE when a input session starts.
+ * The definition of a input session is from the first input until the last input, with all it's movement in it. *
+ * Example session for mouse-input: mousedown -> mousemove -> mouseup
+ *
+ * On each recognizing cycle (see Manager.recognize) the .recognize() method is executed
+ * which determines with state it should be.
+ *
+ * If the recognizer has the state FAILED, CANCELLED or RECOGNIZED (equals ENDED), it is reset to
+ * POSSIBLE to give it another change on the next cycle.
+ *
+ *               Possible
+ *                  |
+ *            +-----+---------------+
+ *            |                     |
+ *      +-----+-----+               |
+ *      |           |               |
+ *   Failed      Cancelled          |
+ *                          +-------+------+
+ *                          |              |
+ *                      Recognized       Began
+ *                                         |
+ *                                      Changed
+ *                                         |
+ *                                  Ended/Recognized
+ */
+var STATE_POSSIBLE = 1;
+var STATE_BEGAN = 2;
+var STATE_CHANGED = 4;
+var STATE_ENDED = 8;
+var STATE_RECOGNIZED = STATE_ENDED;
+var STATE_CANCELLED = 16;
+var STATE_FAILED = 32;
+
+/**
+ * Recognizer
+ * Every recognizer needs to extend from this class.
+ * @constructor
+ * @param {Object} options
+ */
+function Recognizer(options) {
+    this.options = assign({}, this.defaults, options || {});
+
+    this.id = uniqueId();
+
+    this.manager = null;
+
+    // default is enable true
+    this.options.enable = ifUndefined(this.options.enable, true);
+
+    this.state = STATE_POSSIBLE;
+
+    this.simultaneous = {};
+    this.requireFail = [];
+}
+
+Recognizer.prototype = {
+    /**
+     * @virtual
+     * @type {Object}
+     */
+    defaults: {},
+
+    /**
+     * set options
+     * @param {Object} options
+     * @return {Recognizer}
+     */
+    set: function(options) {
+        assign(this.options, options);
+
+        // also update the touchAction, in case something changed about the directions/enabled state
+        this.manager && this.manager.touchAction.update();
+        return this;
+    },
+
+    /**
+     * recognize simultaneous with an other recognizer.
+     * @param {Recognizer} otherRecognizer
+     * @returns {Recognizer} this
+     */
+    recognizeWith: function(otherRecognizer) {
+        if (invokeArrayArg(otherRecognizer, 'recognizeWith', this)) {
+            return this;
+        }
+
+        var simultaneous = this.simultaneous;
+        otherRecognizer = getRecognizerByNameIfManager(otherRecognizer, this);
+        if (!simultaneous[otherRecognizer.id]) {
+            simultaneous[otherRecognizer.id] = otherRecognizer;
+            otherRecognizer.recognizeWith(this);
+        }
+        return this;
+    },
+
+    /**
+     * drop the simultaneous link. it doesnt remove the link on the other recognizer.
+     * @param {Recognizer} otherRecognizer
+     * @returns {Recognizer} this
+     */
+    dropRecognizeWith: function(otherRecognizer) {
+        if (invokeArrayArg(otherRecognizer, 'dropRecognizeWith', this)) {
+            return this;
+        }
+
+        otherRecognizer = getRecognizerByNameIfManager(otherRecognizer, this);
+        delete this.simultaneous[otherRecognizer.id];
+        return this;
+    },
+
+    /**
+     * recognizer can only run when an other is failing
+     * @param {Recognizer} otherRecognizer
+     * @returns {Recognizer} this
+     */
+    requireFailure: function(otherRecognizer) {
+        if (invokeArrayArg(otherRecognizer, 'requireFailure', this)) {
+            return this;
+        }
+
+        var requireFail = this.requireFail;
+        otherRecognizer = getRecognizerByNameIfManager(otherRecognizer, this);
+        if (inArray(requireFail, otherRecognizer) === -1) {
+            requireFail.push(otherRecognizer);
+            otherRecognizer.requireFailure(this);
+        }
+        return this;
+    },
+
+    /**
+     * drop the requireFailure link. it does not remove the link on the other recognizer.
+     * @param {Recognizer} otherRecognizer
+     * @returns {Recognizer} this
+     */
+    dropRequireFailure: function(otherRecognizer) {
+        if (invokeArrayArg(otherRecognizer, 'dropRequireFailure', this)) {
+            return this;
+        }
+
+        otherRecognizer = getRecognizerByNameIfManager(otherRecognizer, this);
+        var index = inArray(this.requireFail, otherRecognizer);
+        if (index > -1) {
+            this.requireFail.splice(index, 1);
+        }
+        return this;
+    },
+
+    /**
+     * has require failures boolean
+     * @returns {boolean}
+     */
+    hasRequireFailures: function() {
+        return this.requireFail.length > 0;
+    },
+
+    /**
+     * if the recognizer can recognize simultaneous with an other recognizer
+     * @param {Recognizer} otherRecognizer
+     * @returns {Boolean}
+     */
+    canRecognizeWith: function(otherRecognizer) {
+        return !!this.simultaneous[otherRecognizer.id];
+    },
+
+    /**
+     * You should use `tryEmit` instead of `emit` directly to check
+     * that all the needed recognizers has failed before emitting.
+     * @param {Object} input
+     */
+    emit: function(input) {
+        var self = this;
+        var state = this.state;
+
+        function emit(event) {
+            self.manager.emit(event, input);
+        }
+
+        // 'panstart' and 'panmove'
+        if (state < STATE_ENDED) {
+            emit(self.options.event + stateStr(state));
+        }
+
+        emit(self.options.event); // simple 'eventName' events
+
+        if (input.additionalEvent) { // additional event(panleft, panright, pinchin, pinchout...)
+            emit(input.additionalEvent);
+        }
+
+        // panend and pancancel
+        if (state >= STATE_ENDED) {
+            emit(self.options.event + stateStr(state));
+        }
+    },
+
+    /**
+     * Check that all the require failure recognizers has failed,
+     * if true, it emits a gesture event,
+     * otherwise, setup the state to FAILED.
+     * @param {Object} input
+     */
+    tryEmit: function(input) {
+        if (this.canEmit()) {
+            return this.emit(input);
+        }
+        // it's failing anyway
+        this.state = STATE_FAILED;
+    },
+
+    /**
+     * can we emit?
+     * @returns {boolean}
+     */
+    canEmit: function() {
+        var i = 0;
+        while (i < this.requireFail.length) {
+            if (!(this.requireFail[i].state & (STATE_FAILED | STATE_POSSIBLE))) {
+                return false;
+            }
+            i++;
+        }
+        return true;
+    },
+
+    /**
+     * update the recognizer
+     * @param {Object} inputData
+     */
+    recognize: function(inputData) {
+        // make a new copy of the inputData
+        // so we can change the inputData without messing up the other recognizers
+        var inputDataClone = assign({}, inputData);
+
+        // is is enabled and allow recognizing?
+        if (!boolOrFn(this.options.enable, [this, inputDataClone])) {
+            this.reset();
+            this.state = STATE_FAILED;
+            return;
+        }
+
+        // reset when we've reached the end
+        if (this.state & (STATE_RECOGNIZED | STATE_CANCELLED | STATE_FAILED)) {
+            this.state = STATE_POSSIBLE;
+        }
+
+        this.state = this.process(inputDataClone);
+
+        // the recognizer has recognized a gesture
+        // so trigger an event
+        if (this.state & (STATE_BEGAN | STATE_CHANGED | STATE_ENDED | STATE_CANCELLED)) {
+            this.tryEmit(inputDataClone);
+        }
+    },
+
+    /**
+     * return the state of the recognizer
+     * the actual recognizing happens in this method
+     * @virtual
+     * @param {Object} inputData
+     * @returns {Const} STATE
+     */
+    process: function(inputData) { }, // jshint ignore:line
+
+    /**
+     * return the preferred touch-action
+     * @virtual
+     * @returns {Array}
+     */
+    getTouchAction: function() { },
+
+    /**
+     * called when the gesture isn't allowed to recognize
+     * like when another is being recognized or it is disabled
+     * @virtual
+     */
+    reset: function() { }
+};
+
+/**
+ * get a usable string, used as event postfix
+ * @param {Const} state
+ * @returns {String} state
+ */
+function stateStr(state) {
+    if (state & STATE_CANCELLED) {
+        return 'cancel';
+    } else if (state & STATE_ENDED) {
+        return 'end';
+    } else if (state & STATE_CHANGED) {
+        return 'move';
+    } else if (state & STATE_BEGAN) {
+        return 'start';
+    }
+    return '';
+}
+
+/**
+ * direction cons to string
+ * @param {Const} direction
+ * @returns {String}
+ */
+function directionStr(direction) {
+    if (direction == DIRECTION_DOWN) {
+        return 'down';
+    } else if (direction == DIRECTION_UP) {
+        return 'up';
+    } else if (direction == DIRECTION_LEFT) {
+        return 'left';
+    } else if (direction == DIRECTION_RIGHT) {
+        return 'right';
+    }
+    return '';
+}
+
+/**
+ * get a recognizer by name if it is bound to a manager
+ * @param {Recognizer|String} otherRecognizer
+ * @param {Recognizer} recognizer
+ * @returns {Recognizer}
+ */
+function getRecognizerByNameIfManager(otherRecognizer, recognizer) {
+    var manager = recognizer.manager;
+    if (manager) {
+        return manager.get(otherRecognizer);
+    }
+    return otherRecognizer;
+}
+
+/**
+ * This recognizer is just used as a base for the simple attribute recognizers.
+ * @constructor
+ * @extends Recognizer
+ */
+function AttrRecognizer() {
+    Recognizer.apply(this, arguments);
+}
+
+inherit(AttrRecognizer, Recognizer, {
+    /**
+     * @namespace
+     * @memberof AttrRecognizer
+     */
+    defaults: {
+        /**
+         * @type {Number}
+         * @default 1
+         */
+        pointers: 1
+    },
+
+    /**
+     * Used to check if it the recognizer receives valid input, like input.distance > 10.
+     * @memberof AttrRecognizer
+     * @param {Object} input
+     * @returns {Boolean} recognized
+     */
+    attrTest: function(input) {
+        var optionPointers = this.options.pointers;
+        return optionPointers === 0 || input.pointers.length === optionPointers;
+    },
+
+    /**
+     * Process the input and return the state for the recognizer
+     * @memberof AttrRecognizer
+     * @param {Object} input
+     * @returns {*} State
+     */
+    process: function(input) {
+        var state = this.state;
+        var eventType = input.eventType;
+
+        var isRecognized = state & (STATE_BEGAN | STATE_CHANGED);
+        var isValid = this.attrTest(input);
+
+        // on cancel input and we've recognized before, return STATE_CANCELLED
+        if (isRecognized && (eventType & INPUT_CANCEL || !isValid)) {
+            return state | STATE_CANCELLED;
+        } else if (isRecognized || isValid) {
+            if (eventType & INPUT_END) {
+                return state | STATE_ENDED;
+            } else if (!(state & STATE_BEGAN)) {
+                return STATE_BEGAN;
+            }
+            return state | STATE_CHANGED;
+        }
+        return STATE_FAILED;
+    }
+});
+
+/**
+ * Pan
+ * Recognized when the pointer is down and moved in the allowed direction.
+ * @constructor
+ * @extends AttrRecognizer
+ */
+function PanRecognizer() {
+    AttrRecognizer.apply(this, arguments);
+
+    this.pX = null;
+    this.pY = null;
+}
+
+inherit(PanRecognizer, AttrRecognizer, {
+    /**
+     * @namespace
+     * @memberof PanRecognizer
+     */
+    defaults: {
+        event: 'pan',
+        threshold: 10,
+        pointers: 1,
+        direction: DIRECTION_ALL
+    },
+
+    getTouchAction: function() {
+        var direction = this.options.direction;
+        var actions = [];
+        if (direction & DIRECTION_HORIZONTAL) {
+            actions.push(TOUCH_ACTION_PAN_Y);
+        }
+        if (direction & DIRECTION_VERTICAL) {
+            actions.push(TOUCH_ACTION_PAN_X);
+        }
+        return actions;
+    },
+
+    directionTest: function(input) {
+        var options = this.options;
+        var hasMoved = true;
+        var distance = input.distance;
+        var direction = input.direction;
+        var x = input.deltaX;
+        var y = input.deltaY;
+
+        // lock to axis?
+        if (!(direction & options.direction)) {
+            if (options.direction & DIRECTION_HORIZONTAL) {
+                direction = (x === 0) ? DIRECTION_NONE : (x < 0) ? DIRECTION_LEFT : DIRECTION_RIGHT;
+                hasMoved = x != this.pX;
+                distance = Math.abs(input.deltaX);
+            } else {
+                direction = (y === 0) ? DIRECTION_NONE : (y < 0) ? DIRECTION_UP : DIRECTION_DOWN;
+                hasMoved = y != this.pY;
+                distance = Math.abs(input.deltaY);
+            }
+        }
+        input.direction = direction;
+        return hasMoved && distance > options.threshold && direction & options.direction;
+    },
+
+    attrTest: function(input) {
+        return AttrRecognizer.prototype.attrTest.call(this, input) &&
+            (this.state & STATE_BEGAN || (!(this.state & STATE_BEGAN) && this.directionTest(input)));
+    },
+
+    emit: function(input) {
+
+        this.pX = input.deltaX;
+        this.pY = input.deltaY;
+
+        var direction = directionStr(input.direction);
+
+        if (direction) {
+            input.additionalEvent = this.options.event + direction;
+        }
+        this._super.emit.call(this, input);
+    }
+});
+
+/**
+ * Pinch
+ * Recognized when two or more pointers are moving toward (zoom-in) or away from each other (zoom-out).
+ * @constructor
+ * @extends AttrRecognizer
+ */
+function PinchRecognizer() {
+    AttrRecognizer.apply(this, arguments);
+}
+
+inherit(PinchRecognizer, AttrRecognizer, {
+    /**
+     * @namespace
+     * @memberof PinchRecognizer
+     */
+    defaults: {
+        event: 'pinch',
+        threshold: 0,
+        pointers: 2
+    },
+
+    getTouchAction: function() {
+        return [TOUCH_ACTION_NONE];
+    },
+
+    attrTest: function(input) {
+        return this._super.attrTest.call(this, input) &&
+            (Math.abs(input.scale - 1) > this.options.threshold || this.state & STATE_BEGAN);
+    },
+
+    emit: function(input) {
+        if (input.scale !== 1) {
+            var inOut = input.scale < 1 ? 'in' : 'out';
+            input.additionalEvent = this.options.event + inOut;
+        }
+        this._super.emit.call(this, input);
+    }
+});
+
+/**
+ * Press
+ * Recognized when the pointer is down for x ms without any movement.
+ * @constructor
+ * @extends Recognizer
+ */
+function PressRecognizer() {
+    Recognizer.apply(this, arguments);
+
+    this._timer = null;
+    this._input = null;
+}
+
+inherit(PressRecognizer, Recognizer, {
+    /**
+     * @namespace
+     * @memberof PressRecognizer
+     */
+    defaults: {
+        event: 'press',
+        pointers: 1,
+        time: 251, // minimal time of the pointer to be pressed
+        threshold: 9 // a minimal movement is ok, but keep it low
+    },
+
+    getTouchAction: function() {
+        return [TOUCH_ACTION_AUTO];
+    },
+
+    process: function(input) {
+        var options = this.options;
+        var validPointers = input.pointers.length === options.pointers;
+        var validMovement = input.distance < options.threshold;
+        var validTime = input.deltaTime > options.time;
+
+        this._input = input;
+
+        // we only allow little movement
+        // and we've reached an end event, so a tap is possible
+        if (!validMovement || !validPointers || (input.eventType & (INPUT_END | INPUT_CANCEL) && !validTime)) {
+            this.reset();
+        } else if (input.eventType & INPUT_START) {
+            this.reset();
+            this._timer = setTimeoutContext(function() {
+                this.state = STATE_RECOGNIZED;
+                this.tryEmit();
+            }, options.time, this);
+        } else if (input.eventType & INPUT_END) {
+            return STATE_RECOGNIZED;
+        }
+        return STATE_FAILED;
+    },
+
+    reset: function() {
+        clearTimeout(this._timer);
+    },
+
+    emit: function(input) {
+        if (this.state !== STATE_RECOGNIZED) {
+            return;
+        }
+
+        if (input && (input.eventType & INPUT_END)) {
+            this.manager.emit(this.options.event + 'up', input);
+        } else {
+            this._input.timeStamp = now();
+            this.manager.emit(this.options.event, this._input);
+        }
+    }
+});
+
+/**
+ * Rotate
+ * Recognized when two or more pointer are moving in a circular motion.
+ * @constructor
+ * @extends AttrRecognizer
+ */
+function RotateRecognizer() {
+    AttrRecognizer.apply(this, arguments);
+}
+
+inherit(RotateRecognizer, AttrRecognizer, {
+    /**
+     * @namespace
+     * @memberof RotateRecognizer
+     */
+    defaults: {
+        event: 'rotate',
+        threshold: 0,
+        pointers: 2
+    },
+
+    getTouchAction: function() {
+        return [TOUCH_ACTION_NONE];
+    },
+
+    attrTest: function(input) {
+        return this._super.attrTest.call(this, input) &&
+            (Math.abs(input.rotation) > this.options.threshold || this.state & STATE_BEGAN);
+    }
+});
+
+/**
+ * Swipe
+ * Recognized when the pointer is moving fast (velocity), with enough distance in the allowed direction.
+ * @constructor
+ * @extends AttrRecognizer
+ */
+function SwipeRecognizer() {
+    AttrRecognizer.apply(this, arguments);
+}
+
+inherit(SwipeRecognizer, AttrRecognizer, {
+    /**
+     * @namespace
+     * @memberof SwipeRecognizer
+     */
+    defaults: {
+        event: 'swipe',
+        threshold: 10,
+        velocity: 0.3,
+        direction: DIRECTION_HORIZONTAL | DIRECTION_VERTICAL,
+        pointers: 1
+    },
+
+    getTouchAction: function() {
+        return PanRecognizer.prototype.getTouchAction.call(this);
+    },
+
+    attrTest: function(input) {
+        var direction = this.options.direction;
+        var velocity;
+
+        if (direction & (DIRECTION_HORIZONTAL | DIRECTION_VERTICAL)) {
+            velocity = input.overallVelocity;
+        } else if (direction & DIRECTION_HORIZONTAL) {
+            velocity = input.overallVelocityX;
+        } else if (direction & DIRECTION_VERTICAL) {
+            velocity = input.overallVelocityY;
+        }
+
+        return this._super.attrTest.call(this, input) &&
+            direction & input.offsetDirection &&
+            input.distance > this.options.threshold &&
+            input.maxPointers == this.options.pointers &&
+            abs(velocity) > this.options.velocity && input.eventType & INPUT_END;
+    },
+
+    emit: function(input) {
+        var direction = directionStr(input.offsetDirection);
+        if (direction) {
+            this.manager.emit(this.options.event + direction, input);
+        }
+
+        this.manager.emit(this.options.event, input);
+    }
+});
+
+/**
+ * A tap is ecognized when the pointer is doing a small tap/click. Multiple taps are recognized if they occur
+ * between the given interval and position. The delay option can be used to recognize multi-taps without firing
+ * a single tap.
+ *
+ * The eventData from the emitted event contains the property `tapCount`, which contains the amount of
+ * multi-taps being recognized.
+ * @constructor
+ * @extends Recognizer
+ */
+function TapRecognizer() {
+    Recognizer.apply(this, arguments);
+
+    // previous time and center,
+    // used for tap counting
+    this.pTime = false;
+    this.pCenter = false;
+
+    this._timer = null;
+    this._input = null;
+    this.count = 0;
+}
+
+inherit(TapRecognizer, Recognizer, {
+    /**
+     * @namespace
+     * @memberof PinchRecognizer
+     */
+    defaults: {
+        event: 'tap',
+        pointers: 1,
+        taps: 1,
+        interval: 300, // max time between the multi-tap taps
+        time: 250, // max time of the pointer to be down (like finger on the screen)
+        threshold: 9, // a minimal movement is ok, but keep it low
+        posThreshold: 10 // a multi-tap can be a bit off the initial position
+    },
+
+    getTouchAction: function() {
+        return [TOUCH_ACTION_MANIPULATION];
+    },
+
+    process: function(input) {
+        var options = this.options;
+
+        var validPointers = input.pointers.length === options.pointers;
+        var validMovement = input.distance < options.threshold;
+        var validTouchTime = input.deltaTime < options.time;
+
+        this.reset();
+
+        if ((input.eventType & INPUT_START) && (this.count === 0)) {
+            return this.failTimeout();
+        }
+
+        // we only allow little movement
+        // and we've reached an end event, so a tap is possible
+        if (validMovement && validTouchTime && validPointers) {
+            if (input.eventType != INPUT_END) {
+                return this.failTimeout();
+            }
+
+            var validInterval = this.pTime ? (input.timeStamp - this.pTime < options.interval) : true;
+            var validMultiTap = !this.pCenter || getDistance(this.pCenter, input.center) < options.posThreshold;
+
+            this.pTime = input.timeStamp;
+            this.pCenter = input.center;
+
+            if (!validMultiTap || !validInterval) {
+                this.count = 1;
+            } else {
+                this.count += 1;
+            }
+
+            this._input = input;
+
+            // if tap count matches we have recognized it,
+            // else it has began recognizing...
+            var tapCount = this.count % options.taps;
+            if (tapCount === 0) {
+                // no failing requirements, immediately trigger the tap event
+                // or wait as long as the multitap interval to trigger
+                if (!this.hasRequireFailures()) {
+                    return STATE_RECOGNIZED;
+                } else {
+                    this._timer = setTimeoutContext(function() {
+                        this.state = STATE_RECOGNIZED;
+                        this.tryEmit();
+                    }, options.interval, this);
+                    return STATE_BEGAN;
+                }
+            }
+        }
+        return STATE_FAILED;
+    },
+
+    failTimeout: function() {
+        this._timer = setTimeoutContext(function() {
+            this.state = STATE_FAILED;
+        }, this.options.interval, this);
+        return STATE_FAILED;
+    },
+
+    reset: function() {
+        clearTimeout(this._timer);
+    },
+
+    emit: function() {
+        if (this.state == STATE_RECOGNIZED) {
+            this._input.tapCount = this.count;
+            this.manager.emit(this.options.event, this._input);
+        }
+    }
+});
+
+/**
+ * Simple way to create a manager with a default set of recognizers.
+ * @param {HTMLElement} element
+ * @param {Object} [options]
+ * @constructor
+ */
+function Hammer(element, options) {
+    options = options || {};
+    options.recognizers = ifUndefined(options.recognizers, Hammer.defaults.preset);
+    return new Manager(element, options);
+}
+
+/**
+ * @const {string}
+ */
+Hammer.VERSION = '2.0.7';
+
+/**
+ * default settings
+ * @namespace
+ */
+Hammer.defaults = {
+    /**
+     * set if DOM events are being triggered.
+     * But this is slower and unused by simple implementations, so disabled by default.
+     * @type {Boolean}
+     * @default false
+     */
+    domEvents: false,
+
+    /**
+     * The value for the touchAction property/fallback.
+     * When set to `compute` it will magically set the correct value based on the added recognizers.
+     * @type {String}
+     * @default compute
+     */
+    touchAction: TOUCH_ACTION_COMPUTE,
+
+    /**
+     * @type {Boolean}
+     * @default true
+     */
+    enable: true,
+
+    /**
+     * EXPERIMENTAL FEATURE -- can be removed/changed
+     * Change the parent input target element.
+     * If Null, then it is being set the to main element.
+     * @type {Null|EventTarget}
+     * @default null
+     */
+    inputTarget: null,
+
+    /**
+     * force an input class
+     * @type {Null|Function}
+     * @default null
+     */
+    inputClass: null,
+
+    /**
+     * Default recognizer setup when calling `Hammer()`
+     * When creating a new Manager these will be skipped.
+     * @type {Array}
+     */
+    preset: [
+        // RecognizerClass, options, [recognizeWith, ...], [requireFailure, ...]
+        [RotateRecognizer, {enable: false}],
+        [PinchRecognizer, {enable: false}, ['rotate']],
+        [SwipeRecognizer, {direction: DIRECTION_HORIZONTAL}],
+        [PanRecognizer, {direction: DIRECTION_HORIZONTAL}, ['swipe']],
+        [TapRecognizer],
+        [TapRecognizer, {event: 'doubletap', taps: 2}, ['tap']],
+        [PressRecognizer]
+    ],
+
+    /**
+     * Some CSS properties can be used to improve the working of Hammer.
+     * Add them to this method and they will be set when creating a new Manager.
+     * @namespace
+     */
+    cssProps: {
+        /**
+         * Disables text selection to improve the dragging gesture. Mainly for desktop browsers.
+         * @type {String}
+         * @default 'none'
+         */
+        userSelect: 'none',
+
+        /**
+         * Disable the Windows Phone grippers when pressing an element.
+         * @type {String}
+         * @default 'none'
+         */
+        touchSelect: 'none',
+
+        /**
+         * Disables the default callout shown when you touch and hold a touch target.
+         * On iOS, when you touch and hold a touch target such as a link, Safari displays
+         * a callout containing information about the link. This property allows you to disable that callout.
+         * @type {String}
+         * @default 'none'
+         */
+        touchCallout: 'none',
+
+        /**
+         * Specifies whether zooming is enabled. Used by IE10>
+         * @type {String}
+         * @default 'none'
+         */
+        contentZooming: 'none',
+
+        /**
+         * Specifies that an entire element should be draggable instead of its contents. Mainly for desktop browsers.
+         * @type {String}
+         * @default 'none'
+         */
+        userDrag: 'none',
+
+        /**
+         * Overrides the highlight color shown when the user taps a link or a JavaScript
+         * clickable element in iOS. This property obeys the alpha value, if specified.
+         * @type {String}
+         * @default 'rgba(0,0,0,0)'
+         */
+        tapHighlightColor: 'rgba(0,0,0,0)'
+    }
+};
+
+var STOP = 1;
+var FORCED_STOP = 2;
+
+/**
+ * Manager
+ * @param {HTMLElement} element
+ * @param {Object} [options]
+ * @constructor
+ */
+function Manager(element, options) {
+    this.options = assign({}, Hammer.defaults, options || {});
+
+    this.options.inputTarget = this.options.inputTarget || element;
+
+    this.handlers = {};
+    this.session = {};
+    this.recognizers = [];
+    this.oldCssProps = {};
+
+    this.element = element;
+    this.input = createInputInstance(this);
+    this.touchAction = new TouchAction(this, this.options.touchAction);
+
+    toggleCssProps(this, true);
+
+    each(this.options.recognizers, function(item) {
+        var recognizer = this.add(new (item[0])(item[1]));
+        item[2] && recognizer.recognizeWith(item[2]);
+        item[3] && recognizer.requireFailure(item[3]);
+    }, this);
+}
+
+Manager.prototype = {
+    /**
+     * set options
+     * @param {Object} options
+     * @returns {Manager}
+     */
+    set: function(options) {
+        assign(this.options, options);
+
+        // Options that need a little more setup
+        if (options.touchAction) {
+            this.touchAction.update();
+        }
+        if (options.inputTarget) {
+            // Clean up existing event listeners and reinitialize
+            this.input.destroy();
+            this.input.target = options.inputTarget;
+            this.input.init();
+        }
+        return this;
+    },
+
+    /**
+     * stop recognizing for this session.
+     * This session will be discarded, when a new [input]start event is fired.
+     * When forced, the recognizer cycle is stopped immediately.
+     * @param {Boolean} [force]
+     */
+    stop: function(force) {
+        this.session.stopped = force ? FORCED_STOP : STOP;
+    },
+
+    /**
+     * run the recognizers!
+     * called by the inputHandler function on every movement of the pointers (touches)
+     * it walks through all the recognizers and tries to detect the gesture that is being made
+     * @param {Object} inputData
+     */
+    recognize: function(inputData) {
+        var session = this.session;
+        if (session.stopped) {
+            return;
+        }
+
+        // run the touch-action polyfill
+        this.touchAction.preventDefaults(inputData);
+
+        var recognizer;
+        var recognizers = this.recognizers;
+
+        // this holds the recognizer that is being recognized.
+        // so the recognizer's state needs to be BEGAN, CHANGED, ENDED or RECOGNIZED
+        // if no recognizer is detecting a thing, it is set to `null`
+        var curRecognizer = session.curRecognizer;
+
+        // reset when the last recognizer is recognized
+        // or when we're in a new session
+        if (!curRecognizer || (curRecognizer && curRecognizer.state & STATE_RECOGNIZED)) {
+            curRecognizer = session.curRecognizer = null;
+        }
+
+        var i = 0;
+        while (i < recognizers.length) {
+            recognizer = recognizers[i];
+
+            // find out if we are allowed try to recognize the input for this one.
+            // 1.   allow if the session is NOT forced stopped (see the .stop() method)
+            // 2.   allow if we still haven't recognized a gesture in this session, or the this recognizer is the one
+            //      that is being recognized.
+            // 3.   allow if the recognizer is allowed to run simultaneous with the current recognized recognizer.
+            //      this can be setup with the `recognizeWith()` method on the recognizer.
+            if (session.stopped !== FORCED_STOP && ( // 1
+                    !curRecognizer || recognizer == curRecognizer || // 2
+                    recognizer.canRecognizeWith(curRecognizer))) { // 3
+                recognizer.recognize(inputData);
+            } else {
+                recognizer.reset();
+            }
+
+            // if the recognizer has been recognizing the input as a valid gesture, we want to store this one as the
+            // current active recognizer. but only if we don't already have an active recognizer
+            if (!curRecognizer && recognizer.state & (STATE_BEGAN | STATE_CHANGED | STATE_ENDED)) {
+                curRecognizer = session.curRecognizer = recognizer;
+            }
+            i++;
+        }
+    },
+
+    /**
+     * get a recognizer by its event name.
+     * @param {Recognizer|String} recognizer
+     * @returns {Recognizer|Null}
+     */
+    get: function(recognizer) {
+        if (recognizer instanceof Recognizer) {
+            return recognizer;
+        }
+
+        var recognizers = this.recognizers;
+        for (var i = 0; i < recognizers.length; i++) {
+            if (recognizers[i].options.event == recognizer) {
+                return recognizers[i];
+            }
+        }
+        return null;
+    },
+
+    /**
+     * add a recognizer to the manager
+     * existing recognizers with the same event name will be removed
+     * @param {Recognizer} recognizer
+     * @returns {Recognizer|Manager}
+     */
+    add: function(recognizer) {
+        if (invokeArrayArg(recognizer, 'add', this)) {
+            return this;
+        }
+
+        // remove existing
+        var existing = this.get(recognizer.options.event);
+        if (existing) {
+            this.remove(existing);
+        }
+
+        this.recognizers.push(recognizer);
+        recognizer.manager = this;
+
+        this.touchAction.update();
+        return recognizer;
+    },
+
+    /**
+     * remove a recognizer by name or instance
+     * @param {Recognizer|String} recognizer
+     * @returns {Manager}
+     */
+    remove: function(recognizer) {
+        if (invokeArrayArg(recognizer, 'remove', this)) {
+            return this;
+        }
+
+        recognizer = this.get(recognizer);
+
+        // let's make sure this recognizer exists
+        if (recognizer) {
+            var recognizers = this.recognizers;
+            var index = inArray(recognizers, recognizer);
+
+            if (index !== -1) {
+                recognizers.splice(index, 1);
+                this.touchAction.update();
+            }
+        }
+
+        return this;
+    },
+
+    /**
+     * bind event
+     * @param {String} events
+     * @param {Function} handler
+     * @returns {EventEmitter} this
+     */
+    on: function(events, handler) {
+        if (events === undefined) {
+            return;
+        }
+        if (handler === undefined) {
+            return;
+        }
+
+        var handlers = this.handlers;
+        each(splitStr(events), function(event) {
+            handlers[event] = handlers[event] || [];
+            handlers[event].push(handler);
+        });
+        return this;
+    },
+
+    /**
+     * unbind event, leave emit blank to remove all handlers
+     * @param {String} events
+     * @param {Function} [handler]
+     * @returns {EventEmitter} this
+     */
+    off: function(events, handler) {
+        if (events === undefined) {
+            return;
+        }
+
+        var handlers = this.handlers;
+        each(splitStr(events), function(event) {
+            if (!handler) {
+                delete handlers[event];
+            } else {
+                handlers[event] && handlers[event].splice(inArray(handlers[event], handler), 1);
+            }
+        });
+        return this;
+    },
+
+    /**
+     * emit event to the listeners
+     * @param {String} event
+     * @param {Object} data
+     */
+    emit: function(event, data) {
+        // we also want to trigger dom events
+        if (this.options.domEvents) {
+            triggerDomEvent(event, data);
+        }
+
+        // no handlers, so skip it all
+        var handlers = this.handlers[event] && this.handlers[event].slice();
+        if (!handlers || !handlers.length) {
+            return;
+        }
+
+        data.type = event;
+        data.preventDefault = function() {
+            data.srcEvent.preventDefault();
+        };
+
+        var i = 0;
+        while (i < handlers.length) {
+            handlers[i](data);
+            i++;
+        }
+    },
+
+    /**
+     * destroy the manager and unbinds all events
+     * it doesn't unbind dom events, that is the user own responsibility
+     */
+    destroy: function() {
+        this.element && toggleCssProps(this, false);
+
+        this.handlers = {};
+        this.session = {};
+        this.input.destroy();
+        this.element = null;
+    }
+};
+
+/**
+ * add/remove the css properties as defined in manager.options.cssProps
+ * @param {Manager} manager
+ * @param {Boolean} add
+ */
+function toggleCssProps(manager, add) {
+    var element = manager.element;
+    if (!element.style) {
+        return;
+    }
+    var prop;
+    each(manager.options.cssProps, function(value, name) {
+        prop = prefixed(element.style, name);
+        if (add) {
+            manager.oldCssProps[prop] = element.style[prop];
+            element.style[prop] = value;
+        } else {
+            element.style[prop] = manager.oldCssProps[prop] || '';
+        }
+    });
+    if (!add) {
+        manager.oldCssProps = {};
+    }
+}
+
+/**
+ * trigger dom event
+ * @param {String} event
+ * @param {Object} data
+ */
+function triggerDomEvent(event, data) {
+    var gestureEvent = document.createEvent('Event');
+    gestureEvent.initEvent(event, true, true);
+    gestureEvent.gesture = data;
+    data.target.dispatchEvent(gestureEvent);
+}
+
+assign(Hammer, {
+    INPUT_START: INPUT_START,
+    INPUT_MOVE: INPUT_MOVE,
+    INPUT_END: INPUT_END,
+    INPUT_CANCEL: INPUT_CANCEL,
+
+    STATE_POSSIBLE: STATE_POSSIBLE,
+    STATE_BEGAN: STATE_BEGAN,
+    STATE_CHANGED: STATE_CHANGED,
+    STATE_ENDED: STATE_ENDED,
+    STATE_RECOGNIZED: STATE_RECOGNIZED,
+    STATE_CANCELLED: STATE_CANCELLED,
+    STATE_FAILED: STATE_FAILED,
+
+    DIRECTION_NONE: DIRECTION_NONE,
+    DIRECTION_LEFT: DIRECTION_LEFT,
+    DIRECTION_RIGHT: DIRECTION_RIGHT,
+    DIRECTION_UP: DIRECTION_UP,
+    DIRECTION_DOWN: DIRECTION_DOWN,
+    DIRECTION_HORIZONTAL: DIRECTION_HORIZONTAL,
+    DIRECTION_VERTICAL: DIRECTION_VERTICAL,
+    DIRECTION_ALL: DIRECTION_ALL,
+
+    Manager: Manager,
+    Input: Input,
+    TouchAction: TouchAction,
+
+    TouchInput: TouchInput,
+    MouseInput: MouseInput,
+    PointerEventInput: PointerEventInput,
+    TouchMouseInput: TouchMouseInput,
+    SingleTouchInput: SingleTouchInput,
+
+    Recognizer: Recognizer,
+    AttrRecognizer: AttrRecognizer,
+    Tap: TapRecognizer,
+    Pan: PanRecognizer,
+    Swipe: SwipeRecognizer,
+    Pinch: PinchRecognizer,
+    Rotate: RotateRecognizer,
+    Press: PressRecognizer,
+
+    on: addEventListeners,
+    off: removeEventListeners,
+    each: each,
+    merge: merge,
+    extend: extend,
+    assign: assign,
+    inherit: inherit,
+    bindFn: bindFn,
+    prefixed: prefixed
+});
+
+// this prevents errors when Hammer is loaded in the presence of an AMD
+//  style loader but by script tag, not by the loader.
+var freeGlobal = (typeof window !== 'undefined' ? window : (typeof self !== 'undefined' ? self : {})); // jshint ignore:line
+freeGlobal.Hammer = Hammer;
+
+if (typeof define === 'function' && define.amd) {
+    define(function() {
+        return Hammer;
+    });
+} else if (typeof module != 'undefined' && module.exports) {
+    module.exports = Hammer;
+} else {
+    window[exportName] = Hammer;
+}
+
+})(window, document, 'Hammer');
+
+},{}],5:[function(require,module,exports){
 /**
  * isMobile.js v0.4.1
  *
@@ -1296,7 +3941,7 @@ if ('undefined' !== typeof module) {
 
 })(this);
 
-},{}],5:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', {
@@ -1463,7 +4108,7 @@ MiniSignal.MiniSignalBinding = MiniSignalBinding;
 exports['default'] = MiniSignal;
 module.exports = exports['default'];
 
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 /*
 object-assign
 (c) Sindre Sorhus
@@ -1555,7 +4200,7 @@ module.exports = shouldUseNative() ? Object.assign : function (target, source) {
 	return to;
 };
 
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 'use strict'
 
 module.exports = function parseURI (str, opts) {
@@ -1587,7 +4232,7 @@ module.exports = function parseURI (str, opts) {
   return uri
 }
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -1815,7 +4460,7 @@ var substr = 'ab'.substr(-1) === 'b'
 ;
 
 }).call(this,require('_process'))
-},{"_process":175}],9:[function(require,module,exports){
+},{"_process":176}],10:[function(require,module,exports){
 var EMPTY_ARRAY_BUFFER = new ArrayBuffer(0);
 
 /**
@@ -1936,7 +4581,7 @@ Buffer.prototype.destroy = function(){
 
 module.exports = Buffer;
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 
 var Texture = require('./GLTexture');
 
@@ -2164,7 +4809,7 @@ Framebuffer.createFloat32 = function(gl, width, height, data)
 
 module.exports = Framebuffer;
 
-},{"./GLTexture":12}],11:[function(require,module,exports){
+},{"./GLTexture":13}],12:[function(require,module,exports){
 
 var compileProgram = require('./shader/compileProgram'),
 	extractAttributes = require('./shader/extractAttributes'),
@@ -2260,7 +4905,7 @@ Shader.prototype.destroy = function()
 
 module.exports = Shader;
 
-},{"./shader/compileProgram":17,"./shader/extractAttributes":19,"./shader/extractUniforms":20,"./shader/generateUniformAccessObject":21,"./shader/setPrecision":25}],12:[function(require,module,exports){
+},{"./shader/compileProgram":18,"./shader/extractAttributes":20,"./shader/extractUniforms":21,"./shader/generateUniformAccessObject":22,"./shader/setPrecision":26}],13:[function(require,module,exports){
 
 /**
  * Helper class to create a WebGL Texture
@@ -2595,7 +5240,7 @@ Texture.fromData = function(gl, data, width, height)
 
 module.exports = Texture;
 
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 
 // state object//
 var setVertexAttribArrays = require( './setVertexAttribArrays' );
@@ -2863,7 +5508,7 @@ VertexArrayObject.prototype.getSize = function()
     return attrib.buffer.data.length / (( attrib.stride/4 ) || attrib.attribute.size);
 };
 
-},{"./setVertexAttribArrays":16}],14:[function(require,module,exports){
+},{"./setVertexAttribArrays":17}],15:[function(require,module,exports){
 
 /**
  * Helper class to create a webGL Context
@@ -2891,7 +5536,7 @@ var createContext = function(canvas, options)
 
 module.exports = createContext;
 
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 var gl = {
     createContext:          require('./createContext'),
     setVertexAttribArrays:  require('./setVertexAttribArrays'),
@@ -2918,7 +5563,7 @@ if (typeof window !== 'undefined')
     window.PIXI.glCore = gl;
 }
 
-},{"./GLBuffer":9,"./GLFramebuffer":10,"./GLShader":11,"./GLTexture":12,"./VertexArrayObject":13,"./createContext":14,"./setVertexAttribArrays":16,"./shader":22}],16:[function(require,module,exports){
+},{"./GLBuffer":10,"./GLFramebuffer":11,"./GLShader":12,"./GLTexture":13,"./VertexArrayObject":14,"./createContext":15,"./setVertexAttribArrays":17,"./shader":23}],17:[function(require,module,exports){
 // var GL_MAP = {};
 
 /**
@@ -2975,7 +5620,7 @@ var setVertexAttribArrays = function (gl, attribs, state)
 
 module.exports = setVertexAttribArrays;
 
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 
 /**
  * @class
@@ -3057,7 +5702,7 @@ var compileShader = function (gl, type, src)
 
 module.exports = compileProgram;
 
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 /**
  * @class
  * @memberof PIXI.glCore.shader
@@ -3137,7 +5782,7 @@ var booleanArray = function(size)
 
 module.exports = defaultValue;
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 
 var mapType = require('./mapType');
 var mapSize = require('./mapSize');
@@ -3180,7 +5825,7 @@ var pointer = function(type, normalized, stride, start){
 
 module.exports = extractAttributes;
 
-},{"./mapSize":23,"./mapType":24}],20:[function(require,module,exports){
+},{"./mapSize":24,"./mapType":25}],21:[function(require,module,exports){
 var mapType = require('./mapType');
 var defaultValue = require('./defaultValue');
 
@@ -3217,7 +5862,7 @@ var extractUniforms = function(gl, program)
 
 module.exports = extractUniforms;
 
-},{"./defaultValue":18,"./mapType":24}],21:[function(require,module,exports){
+},{"./defaultValue":19,"./mapType":25}],22:[function(require,module,exports){
 /**
  * Extracts the attributes
  * @class
@@ -3340,7 +5985,7 @@ function getUniformGroup(nameTokens, uniform)
 
 module.exports = generateUniformAccessObject;
 
-},{}],22:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 module.exports = {
     compileProgram: require('./compileProgram'),
     defaultValue: require('./defaultValue'),
@@ -3351,7 +5996,7 @@ module.exports = {
     mapSize: require('./mapSize'),
     mapType: require('./mapType')
 };
-},{"./compileProgram":17,"./defaultValue":18,"./extractAttributes":19,"./extractUniforms":20,"./generateUniformAccessObject":21,"./mapSize":23,"./mapType":24,"./setPrecision":25}],23:[function(require,module,exports){
+},{"./compileProgram":18,"./defaultValue":19,"./extractAttributes":20,"./extractUniforms":21,"./generateUniformAccessObject":22,"./mapSize":24,"./mapType":25,"./setPrecision":26}],24:[function(require,module,exports){
 /**
  * @class
  * @memberof PIXI.glCore.shader
@@ -3389,7 +6034,7 @@ var GLSL_TO_SIZE = {
 
 module.exports = mapSize;
 
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 
 
 var mapType = function(gl, type) 
@@ -3437,7 +6082,7 @@ var GL_TO_GLSL_TYPES = {
 
 module.exports = mapType;
 
-},{}],25:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 /**
  * Sets the float precision on the shader. If the precision is already present this function will do nothing
  * @param {string} src       the shader source
@@ -3457,7 +6102,7 @@ var setPrecision = function(src, precision)
 
 module.exports = setPrecision;
 
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -3951,7 +6596,7 @@ exports.default = AccessibilityManager;
 core.WebGLRenderer.registerPlugin('accessibility', AccessibilityManager);
 core.CanvasRenderer.registerPlugin('accessibility', AccessibilityManager);
 
-},{"../core":51,"./accessibleTarget":27,"ismobilejs":4}],27:[function(require,module,exports){
+},{"../core":52,"./accessibleTarget":28,"ismobilejs":5}],28:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -4009,7 +6654,7 @@ exports.default = {
   _accessibleDiv: false
 };
 
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -4034,7 +6679,7 @@ Object.defineProperty(exports, 'AccessibilityManager', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./AccessibilityManager":26,"./accessibleTarget":27}],29:[function(require,module,exports){
+},{"./AccessibilityManager":27,"./accessibleTarget":28}],30:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -4257,7 +6902,7 @@ var Application = function () {
 
 exports.default = Application;
 
-},{"./autoDetectRenderer":31,"./const":32,"./display/Container":34,"./settings":87,"./ticker":107}],30:[function(require,module,exports){
+},{"./autoDetectRenderer":32,"./const":33,"./display/Container":35,"./settings":88,"./ticker":108}],31:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -4321,7 +6966,7 @@ var Shader = function (_GLShader) {
 
 exports.default = Shader;
 
-},{"./settings":87,"pixi-gl-core":15}],31:[function(require,module,exports){
+},{"./settings":88,"pixi-gl-core":16}],32:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -4390,7 +7035,7 @@ function autoDetectRenderer(options, arg1, arg2, arg3) {
     return new _CanvasRenderer2.default(options, arg1, arg2);
 }
 
-},{"./renderers/canvas/CanvasRenderer":63,"./renderers/webgl/WebGLRenderer":70,"./utils":111}],32:[function(require,module,exports){
+},{"./renderers/canvas/CanvasRenderer":64,"./renderers/webgl/WebGLRenderer":71,"./utils":112}],33:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -4733,7 +7378,7 @@ var UPDATE_PRIORITY = exports.UPDATE_PRIORITY = {
   UTILITY: -50
 };
 
-},{}],33:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -5076,7 +7721,7 @@ var Bounds = function () {
 
 exports.default = Bounds;
 
-},{"../math":56}],34:[function(require,module,exports){
+},{"../math":57}],35:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -5694,7 +8339,7 @@ var Container = function (_DisplayObject) {
 exports.default = Container;
 Container.prototype.containerUpdateTransform = Container.prototype.updateTransform;
 
-},{"../utils":111,"./DisplayObject":35}],35:[function(require,module,exports){
+},{"../utils":112,"./DisplayObject":36}],36:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -6386,7 +9031,7 @@ var DisplayObject = function (_EventEmitter) {
 exports.default = DisplayObject;
 DisplayObject.prototype.displayObjectUpdateTransform = DisplayObject.prototype.updateTransform;
 
-},{"../const":32,"../math":56,"../settings":87,"./Bounds":33,"./Transform":36,"./TransformStatic":38,"eventemitter3":3}],36:[function(require,module,exports){
+},{"../const":33,"../math":57,"../settings":88,"./Bounds":34,"./Transform":37,"./TransformStatic":39,"eventemitter3":3}],37:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -6567,7 +9212,7 @@ var Transform = function (_TransformBase) {
 
 exports.default = Transform;
 
-},{"../math":56,"./TransformBase":37}],37:[function(require,module,exports){
+},{"../math":57,"./TransformBase":38}],38:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -6654,7 +9299,7 @@ TransformBase.prototype.updateWorldTransform = TransformBase.prototype.updateTra
 
 TransformBase.IDENTITY = new TransformBase();
 
-},{"../math":56}],38:[function(require,module,exports){
+},{"../math":57}],39:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -6864,7 +9509,7 @@ var TransformStatic = function (_TransformBase) {
 
 exports.default = TransformStatic;
 
-},{"../math":56,"./TransformBase":37}],39:[function(require,module,exports){
+},{"../math":57,"./TransformBase":38}],40:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -8036,7 +10681,7 @@ exports.default = Graphics;
 
 Graphics._SPRITE_TEXTURE = null;
 
-},{"../const":32,"../display/Bounds":33,"../display/Container":34,"../math":56,"../renderers/canvas/CanvasRenderer":63,"../sprites/Sprite":88,"../textures/RenderTexture":99,"../textures/Texture":101,"../utils":111,"./GraphicsData":40,"./utils/bezierCurveTo":42}],40:[function(require,module,exports){
+},{"../const":33,"../display/Bounds":34,"../display/Container":35,"../math":57,"../renderers/canvas/CanvasRenderer":64,"../sprites/Sprite":89,"../textures/RenderTexture":100,"../textures/Texture":102,"../utils":112,"./GraphicsData":41,"./utils/bezierCurveTo":43}],41:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -8158,7 +10803,7 @@ var GraphicsData = function () {
 
 exports.default = GraphicsData;
 
-},{}],41:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -8427,7 +11072,7 @@ exports.default = CanvasGraphicsRenderer;
 
 _CanvasRenderer2.default.registerPlugin('graphics', CanvasGraphicsRenderer);
 
-},{"../../const":32,"../../renderers/canvas/CanvasRenderer":63}],42:[function(require,module,exports){
+},{"../../const":33,"../../renderers/canvas/CanvasRenderer":64}],43:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -8477,7 +11122,7 @@ function bezierCurveTo(fromX, fromY, cpX, cpY, cpX2, cpY2, toX, toY) {
     return path;
 }
 
-},{}],43:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -8742,7 +11387,7 @@ exports.default = GraphicsRenderer;
 
 _WebGLRenderer2.default.registerPlugin('graphics', GraphicsRenderer);
 
-},{"../../const":32,"../../renderers/webgl/WebGLRenderer":70,"../../renderers/webgl/utils/ObjectRenderer":80,"../../utils":111,"./WebGLGraphicsData":44,"./shaders/PrimitiveShader":45,"./utils/buildCircle":46,"./utils/buildPoly":48,"./utils/buildRectangle":49,"./utils/buildRoundedRectangle":50}],44:[function(require,module,exports){
+},{"../../const":33,"../../renderers/webgl/WebGLRenderer":71,"../../renderers/webgl/utils/ObjectRenderer":81,"../../utils":112,"./WebGLGraphicsData":45,"./shaders/PrimitiveShader":46,"./utils/buildCircle":47,"./utils/buildPoly":49,"./utils/buildRectangle":50,"./utils/buildRoundedRectangle":51}],45:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -8885,7 +11530,7 @@ var WebGLGraphicsData = function () {
 
 exports.default = WebGLGraphicsData;
 
-},{"pixi-gl-core":15}],45:[function(require,module,exports){
+},{"pixi-gl-core":16}],46:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -8930,7 +11575,7 @@ var PrimitiveShader = function (_Shader) {
 
 exports.default = PrimitiveShader;
 
-},{"../../../Shader":30}],46:[function(require,module,exports){
+},{"../../../Shader":31}],47:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -9023,7 +11668,7 @@ function buildCircle(graphicsData, webGLData, webGLDataNativeLines) {
     }
 }
 
-},{"../../../const":32,"../../../utils":111,"./buildLine":47}],47:[function(require,module,exports){
+},{"../../../const":33,"../../../utils":112,"./buildLine":48}],48:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -9293,7 +11938,7 @@ function buildNativeLine(graphicsData, webGLData) {
     }
 }
 
-},{"../../../math":56,"../../../utils":111}],48:[function(require,module,exports){
+},{"../../../math":57,"../../../utils":112}],49:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -9379,7 +12024,7 @@ function buildPoly(graphicsData, webGLData, webGLDataNativeLines) {
     }
 }
 
-},{"../../../utils":111,"./buildLine":47,"earcut":2}],49:[function(require,module,exports){
+},{"../../../utils":112,"./buildLine":48,"earcut":2}],50:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -9455,7 +12100,7 @@ function buildRectangle(graphicsData, webGLData, webGLDataNativeLines) {
     }
 }
 
-},{"../../../utils":111,"./buildLine":47}],50:[function(require,module,exports){
+},{"../../../utils":112,"./buildLine":48}],51:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -9611,7 +12256,7 @@ function quadraticBezierCurve(fromX, fromY, cpX, cpY, toX, toY) {
     return points;
 }
 
-},{"../../../utils":111,"./buildLine":47,"earcut":2}],51:[function(require,module,exports){
+},{"../../../utils":112,"./buildLine":48,"earcut":2}],52:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -9997,7 +12642,7 @@ exports.WebGLRenderer = _WebGLRenderer2.default; /**
                                                   * @namespace PIXI
                                                   */
 
-},{"./Application":29,"./Shader":30,"./autoDetectRenderer":31,"./const":32,"./display/Bounds":33,"./display/Container":34,"./display/DisplayObject":35,"./display/Transform":36,"./display/TransformBase":37,"./display/TransformStatic":38,"./graphics/Graphics":39,"./graphics/GraphicsData":40,"./graphics/canvas/CanvasGraphicsRenderer":41,"./graphics/webgl/GraphicsRenderer":43,"./math":56,"./renderers/canvas/CanvasRenderer":63,"./renderers/canvas/utils/CanvasRenderTarget":65,"./renderers/webgl/WebGLRenderer":70,"./renderers/webgl/filters/Filter":72,"./renderers/webgl/filters/spriteMask/SpriteMaskFilter":75,"./renderers/webgl/managers/WebGLManager":79,"./renderers/webgl/utils/ObjectRenderer":80,"./renderers/webgl/utils/Quad":81,"./renderers/webgl/utils/RenderTarget":82,"./settings":87,"./sprites/Sprite":88,"./sprites/canvas/CanvasSpriteRenderer":89,"./sprites/canvas/CanvasTinter":90,"./sprites/webgl/SpriteRenderer":92,"./text/Text":94,"./text/TextMetrics":95,"./text/TextStyle":96,"./textures/BaseRenderTexture":97,"./textures/BaseTexture":98,"./textures/RenderTexture":99,"./textures/Spritesheet":100,"./textures/Texture":101,"./textures/TextureMatrix":102,"./textures/TextureUvs":103,"./textures/VideoBaseTexture":104,"./ticker":107,"./utils":111,"pixi-gl-core":15}],52:[function(require,module,exports){
+},{"./Application":30,"./Shader":31,"./autoDetectRenderer":32,"./const":33,"./display/Bounds":34,"./display/Container":35,"./display/DisplayObject":36,"./display/Transform":37,"./display/TransformBase":38,"./display/TransformStatic":39,"./graphics/Graphics":40,"./graphics/GraphicsData":41,"./graphics/canvas/CanvasGraphicsRenderer":42,"./graphics/webgl/GraphicsRenderer":44,"./math":57,"./renderers/canvas/CanvasRenderer":64,"./renderers/canvas/utils/CanvasRenderTarget":66,"./renderers/webgl/WebGLRenderer":71,"./renderers/webgl/filters/Filter":73,"./renderers/webgl/filters/spriteMask/SpriteMaskFilter":76,"./renderers/webgl/managers/WebGLManager":80,"./renderers/webgl/utils/ObjectRenderer":81,"./renderers/webgl/utils/Quad":82,"./renderers/webgl/utils/RenderTarget":83,"./settings":88,"./sprites/Sprite":89,"./sprites/canvas/CanvasSpriteRenderer":90,"./sprites/canvas/CanvasTinter":91,"./sprites/webgl/SpriteRenderer":93,"./text/Text":95,"./text/TextMetrics":96,"./text/TextStyle":97,"./textures/BaseRenderTexture":98,"./textures/BaseTexture":99,"./textures/RenderTexture":100,"./textures/Spritesheet":101,"./textures/Texture":102,"./textures/TextureMatrix":103,"./textures/TextureUvs":104,"./textures/VideoBaseTexture":105,"./ticker":108,"./utils":112,"pixi-gl-core":16}],53:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -10190,7 +12835,7 @@ var GroupD8 = {
 
 exports.default = GroupD8;
 
-},{"./Matrix":53}],53:[function(require,module,exports){
+},{"./Matrix":54}],54:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -10721,7 +13366,7 @@ var Matrix = function () {
 
 exports.default = Matrix;
 
-},{"./Point":55}],54:[function(require,module,exports){
+},{"./Point":56}],55:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -10838,7 +13483,7 @@ var ObservablePoint = function () {
 
 exports.default = ObservablePoint;
 
-},{}],55:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -10929,7 +13574,7 @@ var Point = function () {
 
 exports.default = Point;
 
-},{}],56:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -11017,7 +13662,7 @@ Object.defineProperty(exports, 'RoundedRectangle', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./GroupD8":52,"./Matrix":53,"./ObservablePoint":54,"./Point":55,"./shapes/Circle":57,"./shapes/Ellipse":58,"./shapes/Polygon":59,"./shapes/Rectangle":60,"./shapes/RoundedRectangle":61}],57:[function(require,module,exports){
+},{"./GroupD8":53,"./Matrix":54,"./ObservablePoint":55,"./Point":56,"./shapes/Circle":58,"./shapes/Ellipse":59,"./shapes/Polygon":60,"./shapes/Rectangle":61,"./shapes/RoundedRectangle":62}],58:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -11131,7 +13776,7 @@ var Circle = function () {
 
 exports.default = Circle;
 
-},{"../../const":32,"./Rectangle":60}],58:[function(require,module,exports){
+},{"../../const":33,"./Rectangle":61}],59:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -11253,7 +13898,7 @@ var Ellipse = function () {
 
 exports.default = Ellipse;
 
-},{"../../const":32,"./Rectangle":60}],59:[function(require,module,exports){
+},{"../../const":33,"./Rectangle":61}],60:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -11384,7 +14029,7 @@ var Polygon = function () {
 
 exports.default = Polygon;
 
-},{"../../const":32,"../Point":55}],60:[function(require,module,exports){
+},{"../../const":33,"../Point":56}],61:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -11647,7 +14292,7 @@ var Rectangle = function () {
 
 exports.default = Rectangle;
 
-},{"../../const":32}],61:[function(require,module,exports){
+},{"../../const":33}],62:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -11780,7 +14425,7 @@ var RoundedRectangle = function () {
 
 exports.default = RoundedRectangle;
 
-},{"../../const":32}],62:[function(require,module,exports){
+},{"../../const":33}],63:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -12145,7 +14790,7 @@ var SystemRenderer = function (_EventEmitter) {
 
 exports.default = SystemRenderer;
 
-},{"../const":32,"../display/Container":34,"../math":56,"../settings":87,"../textures/RenderTexture":99,"../utils":111,"eventemitter3":3}],63:[function(require,module,exports){
+},{"../const":33,"../display/Container":35,"../math":57,"../settings":88,"../textures/RenderTexture":100,"../utils":112,"eventemitter3":3}],64:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -12510,7 +15155,7 @@ var CanvasRenderer = function (_SystemRenderer) {
 exports.default = CanvasRenderer;
 _utils.pluginTarget.mixin(CanvasRenderer);
 
-},{"../../const":32,"../../settings":87,"../../utils":111,"../SystemRenderer":62,"./utils/CanvasMaskManager":64,"./utils/CanvasRenderTarget":65,"./utils/mapCanvasBlendModesToPixi":67}],64:[function(require,module,exports){
+},{"../../const":33,"../../settings":88,"../../utils":112,"../SystemRenderer":63,"./utils/CanvasMaskManager":65,"./utils/CanvasRenderTarget":66,"./utils/mapCanvasBlendModesToPixi":68}],65:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -12679,7 +15324,7 @@ var CanvasMaskManager = function () {
 
 exports.default = CanvasMaskManager;
 
-},{"../../../const":32}],65:[function(require,module,exports){
+},{"../../../const":33}],66:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -12803,7 +15448,7 @@ var CanvasRenderTarget = function () {
 
 exports.default = CanvasRenderTarget;
 
-},{"../../../settings":87}],66:[function(require,module,exports){
+},{"../../../settings":88}],67:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -12864,7 +15509,7 @@ function canUseNewCanvasBlendModes() {
     return data[0] === 255 && data[1] === 0 && data[2] === 0;
 }
 
-},{}],67:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -12936,7 +15581,7 @@ function mapCanvasBlendModesToPixi() {
     return array;
 }
 
-},{"../../../const":32,"./canUseNewCanvasBlendModes":66}],68:[function(require,module,exports){
+},{"../../../const":33,"./canUseNewCanvasBlendModes":67}],69:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -13056,7 +15701,7 @@ var TextureGarbageCollector = function () {
 
 exports.default = TextureGarbageCollector;
 
-},{"../../const":32,"../../settings":87}],69:[function(require,module,exports){
+},{"../../const":33,"../../settings":88}],70:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -13312,7 +15957,7 @@ var TextureManager = function () {
 
 exports.default = TextureManager;
 
-},{"../../const":32,"../../utils":111,"./utils/RenderTarget":82,"pixi-gl-core":15}],70:[function(require,module,exports){
+},{"../../const":33,"../../utils":112,"./utils/RenderTarget":83,"pixi-gl-core":16}],71:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -14129,7 +16774,7 @@ var WebGLRenderer = function (_SystemRenderer) {
 exports.default = WebGLRenderer;
 _utils.pluginTarget.mixin(WebGLRenderer);
 
-},{"../../const":32,"../../textures/BaseTexture":98,"../../utils":111,"../SystemRenderer":62,"./TextureGarbageCollector":68,"./TextureManager":69,"./WebGLState":71,"./managers/FilterManager":76,"./managers/MaskManager":77,"./managers/StencilManager":78,"./utils/ObjectRenderer":80,"./utils/RenderTarget":82,"./utils/mapWebGLDrawModesToPixi":85,"./utils/validateContext":86,"pixi-gl-core":15}],71:[function(require,module,exports){
+},{"../../const":33,"../../textures/BaseTexture":99,"../../utils":112,"../SystemRenderer":63,"./TextureGarbageCollector":69,"./TextureManager":70,"./WebGLState":72,"./managers/FilterManager":77,"./managers/MaskManager":78,"./managers/StencilManager":79,"./utils/ObjectRenderer":81,"./utils/RenderTarget":83,"./utils/mapWebGLDrawModesToPixi":86,"./utils/validateContext":87,"pixi-gl-core":16}],72:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -14409,7 +17054,7 @@ var WebGLState = function () {
 
 exports.default = WebGLState;
 
-},{"./utils/mapWebGLBlendModesToPixi":84}],72:[function(require,module,exports){
+},{"./utils/mapWebGLBlendModesToPixi":85}],73:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -14605,7 +17250,7 @@ var Filter = function () {
 
 exports.default = Filter;
 
-},{"../../../const":32,"../../../settings":87,"../../../utils":111,"./extractUniformsFromSrc":73}],73:[function(require,module,exports){
+},{"../../../const":33,"../../../settings":88,"../../../utils":112,"./extractUniformsFromSrc":74}],74:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -14667,7 +17312,7 @@ function extractUniformsFromString(string) {
     return uniforms;
 }
 
-},{"pixi-gl-core":15}],74:[function(require,module,exports){
+},{"pixi-gl-core":16}],75:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -14726,7 +17371,7 @@ function calculateSpriteMatrix(outputMatrix, filterArea, textureSize, sprite) {
     return mappedMatrix;
 }
 
-},{"../../../math":56}],75:[function(require,module,exports){
+},{"../../../math":57}],76:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -14814,7 +17459,7 @@ var SpriteMaskFilter = function (_Filter) {
 
 exports.default = SpriteMaskFilter;
 
-},{"../../../../math":56,"../../../../textures/TextureMatrix":102,"../Filter":72,"path":8}],76:[function(require,module,exports){
+},{"../../../../math":57,"../../../../textures/TextureMatrix":103,"../Filter":73,"path":9}],77:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -15408,7 +18053,7 @@ var FilterManager = function (_WebGLManager) {
 
 exports.default = FilterManager;
 
-},{"../../../Shader":30,"../../../math":56,"../filters/filterTransforms":74,"../utils/Quad":81,"../utils/RenderTarget":82,"./WebGLManager":79,"bit-twiddle":1}],77:[function(require,module,exports){
+},{"../../../Shader":31,"../../../math":57,"../filters/filterTransforms":75,"../utils/Quad":82,"../utils/RenderTarget":83,"./WebGLManager":80,"bit-twiddle":1}],78:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -15618,7 +18263,7 @@ var MaskManager = function (_WebGLManager) {
 
 exports.default = MaskManager;
 
-},{"../filters/spriteMask/SpriteMaskFilter":75,"./WebGLManager":79}],78:[function(require,module,exports){
+},{"../filters/spriteMask/SpriteMaskFilter":76,"./WebGLManager":80}],79:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -15771,7 +18416,7 @@ var StencilManager = function (_WebGLManager) {
 
 exports.default = StencilManager;
 
-},{"./WebGLManager":79}],79:[function(require,module,exports){
+},{"./WebGLManager":80}],80:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -15826,7 +18471,7 @@ var WebGLManager = function () {
 
 exports.default = WebGLManager;
 
-},{}],80:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -15904,7 +18549,7 @@ var ObjectRenderer = function (_WebGLManager) {
 
 exports.default = ObjectRenderer;
 
-},{"../managers/WebGLManager":79}],81:[function(require,module,exports){
+},{"../managers/WebGLManager":80}],82:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -16085,7 +18730,7 @@ var Quad = function () {
 
 exports.default = Quad;
 
-},{"../../../utils/createIndicesForQuads":109,"pixi-gl-core":15}],82:[function(require,module,exports){
+},{"../../../utils/createIndicesForQuads":110,"pixi-gl-core":16}],83:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -16412,7 +19057,7 @@ var RenderTarget = function () {
 
 exports.default = RenderTarget;
 
-},{"../../../const":32,"../../../math":56,"../../../settings":87,"pixi-gl-core":15}],83:[function(require,module,exports){
+},{"../../../const":33,"../../../math":57,"../../../settings":88,"pixi-gl-core":16}],84:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -16487,7 +19132,7 @@ function generateIfTestSrc(maxIfs) {
     return src;
 }
 
-},{"pixi-gl-core":15}],84:[function(require,module,exports){
+},{"pixi-gl-core":16}],85:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -16536,7 +19181,7 @@ function mapWebGLBlendModesToPixi(gl) {
     return array;
 }
 
-},{"../../../const":32}],85:[function(require,module,exports){
+},{"../../../const":33}],86:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -16568,7 +19213,7 @@ function mapWebGLDrawModesToPixi(gl) {
   return object;
 }
 
-},{"../../../const":32}],86:[function(require,module,exports){
+},{"../../../const":33}],87:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -16584,7 +19229,7 @@ function validateContext(gl) {
     }
 }
 
-},{}],87:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -16819,7 +19464,7 @@ exports.default = {
 
 };
 
-},{"./utils/canUploadSameBuffer":108,"./utils/maxRecommendedTextures":113}],88:[function(require,module,exports){
+},{"./utils/canUploadSameBuffer":109,"./utils/maxRecommendedTextures":114}],89:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -17442,7 +20087,7 @@ var Sprite = function (_Container) {
 
 exports.default = Sprite;
 
-},{"../const":32,"../display/Container":34,"../math":56,"../textures/Texture":101,"../utils":111}],89:[function(require,module,exports){
+},{"../const":33,"../display/Container":35,"../math":57,"../textures/Texture":102,"../utils":112}],90:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -17595,7 +20240,7 @@ exports.default = CanvasSpriteRenderer;
 
 _CanvasRenderer2.default.registerPlugin('sprite', CanvasSpriteRenderer);
 
-},{"../../const":32,"../../math":56,"../../renderers/canvas/CanvasRenderer":63,"./CanvasTinter":90}],90:[function(require,module,exports){
+},{"../../const":33,"../../math":57,"../../renderers/canvas/CanvasRenderer":64,"./CanvasTinter":91}],91:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -17846,7 +20491,7 @@ CanvasTinter.tintMethod = CanvasTinter.canUseMultiply ? CanvasTinter.tintWithMul
 
 exports.default = CanvasTinter;
 
-},{"../../renderers/canvas/utils/canUseNewCanvasBlendModes":66,"../../utils":111}],91:[function(require,module,exports){
+},{"../../renderers/canvas/utils/canUseNewCanvasBlendModes":67,"../../utils":112}],92:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -17899,7 +20544,7 @@ var Buffer = function () {
 
 exports.default = Buffer;
 
-},{}],92:[function(require,module,exports){
+},{}],93:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -18450,7 +21095,7 @@ exports.default = SpriteRenderer;
 
 _WebGLRenderer2.default.registerPlugin('sprite', SpriteRenderer);
 
-},{"../../renderers/webgl/WebGLRenderer":70,"../../renderers/webgl/utils/ObjectRenderer":80,"../../renderers/webgl/utils/checkMaxIfStatmentsInShader":83,"../../settings":87,"../../utils":111,"../../utils/createIndicesForQuads":109,"./BatchBuffer":91,"./generateMultiTextureShader":93,"bit-twiddle":1,"pixi-gl-core":15}],93:[function(require,module,exports){
+},{"../../renderers/webgl/WebGLRenderer":71,"../../renderers/webgl/utils/ObjectRenderer":81,"../../renderers/webgl/utils/checkMaxIfStatmentsInShader":84,"../../settings":88,"../../utils":112,"../../utils/createIndicesForQuads":110,"./BatchBuffer":92,"./generateMultiTextureShader":94,"bit-twiddle":1,"pixi-gl-core":16}],94:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -18513,7 +21158,7 @@ function generateSampleSrc(maxTextures) {
     return src;
 }
 
-},{"../../Shader":30,"path":8}],94:[function(require,module,exports){
+},{"../../Shader":31,"path":9}],95:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -19168,7 +21813,7 @@ var Text = function (_Sprite) {
 
 exports.default = Text;
 
-},{"../const":32,"../math":56,"../settings":87,"../sprites/Sprite":88,"../textures/Texture":101,"../utils":111,"../utils/trimCanvas":116,"./TextMetrics":95,"./TextStyle":96}],95:[function(require,module,exports){
+},{"../const":33,"../math":57,"../settings":88,"../sprites/Sprite":89,"../textures/Texture":102,"../utils":112,"../utils/trimCanvas":117,"./TextMetrics":96,"./TextStyle":97}],96:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -19471,7 +22116,7 @@ TextMetrics._context = canvas.getContext('2d');
  */
 TextMetrics._fonts = {};
 
-},{}],96:[function(require,module,exports){
+},{}],97:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -20273,7 +22918,7 @@ function deepCopyProperties(target, source, propertyObj) {
     }
 }
 
-},{"../const":32,"../utils":111}],97:[function(require,module,exports){
+},{"../const":33,"../utils":112}],98:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -20435,7 +23080,7 @@ var BaseRenderTexture = function (_BaseTexture) {
 
 exports.default = BaseRenderTexture;
 
-},{"../settings":87,"./BaseTexture":98}],98:[function(require,module,exports){
+},{"../settings":88,"./BaseTexture":99}],99:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -21281,7 +23926,7 @@ var BaseTexture = function (_EventEmitter) {
 
 exports.default = BaseTexture;
 
-},{"../settings":87,"../utils":111,"../utils/determineCrossOrigin":110,"bit-twiddle":1,"eventemitter3":3}],99:[function(require,module,exports){
+},{"../settings":88,"../utils":112,"../utils/determineCrossOrigin":111,"bit-twiddle":1,"eventemitter3":3}],100:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -21435,7 +24080,7 @@ var RenderTexture = function (_Texture) {
 
 exports.default = RenderTexture;
 
-},{"./BaseRenderTexture":97,"./Texture":101}],100:[function(require,module,exports){
+},{"./BaseRenderTexture":98,"./Texture":102}],101:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -21697,7 +24342,7 @@ var Spritesheet = function () {
 
 exports.default = Spritesheet;
 
-},{"../":51,"../utils":111}],101:[function(require,module,exports){
+},{"../":52,"../utils":112}],102:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -22389,7 +25034,7 @@ Texture.WHITE = createWhiteTexture();
 removeAllHandlers(Texture.WHITE);
 removeAllHandlers(Texture.WHITE.baseTexture);
 
-},{"../math":56,"../settings":87,"../utils":111,"./BaseTexture":98,"./TextureUvs":103,"./VideoBaseTexture":104,"eventemitter3":3}],102:[function(require,module,exports){
+},{"../math":57,"../settings":88,"../utils":112,"./BaseTexture":99,"./TextureUvs":104,"./VideoBaseTexture":105,"eventemitter3":3}],103:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -22553,7 +25198,7 @@ var TextureMatrix = function () {
 
 exports.default = TextureMatrix;
 
-},{"../math/Matrix":53}],103:[function(require,module,exports){
+},{"../math/Matrix":54}],104:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -22658,7 +25303,7 @@ var TextureUvs = function () {
 
 exports.default = TextureUvs;
 
-},{"../math/GroupD8":52}],104:[function(require,module,exports){
+},{"../math/GroupD8":53}],105:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -23000,7 +25645,7 @@ function createSource(path, type) {
     return source;
 }
 
-},{"../const":32,"../ticker":107,"../utils":111,"../utils/determineCrossOrigin":110,"./BaseTexture":98}],105:[function(require,module,exports){
+},{"../const":33,"../ticker":108,"../utils":112,"../utils/determineCrossOrigin":111,"./BaseTexture":99}],106:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -23473,7 +26118,7 @@ var Ticker = function () {
 
 exports.default = Ticker;
 
-},{"../const":32,"../settings":87,"./TickerListener":106}],106:[function(require,module,exports){
+},{"../const":33,"../settings":88,"./TickerListener":107}],107:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -23647,7 +26292,7 @@ var TickerListener = function () {
 
 exports.default = TickerListener;
 
-},{}],107:[function(require,module,exports){
+},{}],108:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -23727,7 +26372,7 @@ shared.destroy = function () {
 exports.shared = shared;
 exports.Ticker = _Ticker2.default;
 
-},{"./Ticker":105}],108:[function(require,module,exports){
+},{"./Ticker":106}],109:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -23741,7 +26386,7 @@ function canUploadSameBuffer() {
 	return !ios;
 }
 
-},{}],109:[function(require,module,exports){
+},{}],110:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -23775,7 +26420,7 @@ function createIndicesForQuads(size) {
     return indices;
 }
 
-},{}],110:[function(require,module,exports){
+},{}],111:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -23831,7 +26476,7 @@ function determineCrossOrigin(url) {
     return '';
 }
 
-},{"url":187}],111:[function(require,module,exports){
+},{"url":188}],112:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -24305,7 +26950,7 @@ function premultiplyTintToRgba(tint, alpha, out, premultiply) {
     return out;
 }
 
-},{"../const":32,"../settings":87,"./mapPremultipliedBlendModes":112,"./mixin":114,"./pluginTarget":115,"eventemitter3":3,"ismobilejs":4,"remove-array-items":180}],112:[function(require,module,exports){
+},{"../const":33,"../settings":88,"./mapPremultipliedBlendModes":113,"./mixin":115,"./pluginTarget":116,"eventemitter3":3,"ismobilejs":5,"remove-array-items":181}],113:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -24348,7 +26993,7 @@ function mapPremultipliedBlendModes() {
     return array;
 }
 
-},{"../const":32}],113:[function(require,module,exports){
+},{"../const":33}],114:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -24370,7 +27015,7 @@ function maxRecommendedTextures(max) {
     return max;
 }
 
-},{"ismobilejs":4}],114:[function(require,module,exports){
+},{"ismobilejs":5}],115:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -24432,7 +27077,7 @@ function performMixins() {
     mixins.length = 0;
 }
 
-},{}],115:[function(require,module,exports){
+},{}],116:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -24498,7 +27143,7 @@ exports.default = {
     }
 };
 
-},{}],116:[function(require,module,exports){
+},{}],117:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -24574,7 +27219,7 @@ function trimCanvas(canvas) {
     };
 }
 
-},{}],117:[function(require,module,exports){
+},{}],118:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -25718,7 +28363,7 @@ function deprecation(core) {
     }
 }
 
-},{}],118:[function(require,module,exports){
+},{}],119:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -25898,7 +28543,7 @@ exports.default = CanvasExtract;
 
 core.CanvasRenderer.registerPlugin('extract', CanvasExtract);
 
-},{"../../core":51}],119:[function(require,module,exports){
+},{"../../core":52}],120:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -25923,7 +28568,7 @@ Object.defineProperty(exports, 'canvas', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./canvas/CanvasExtract":118,"./webgl/WebGLExtract":120}],120:[function(require,module,exports){
+},{"./canvas/CanvasExtract":119,"./webgl/WebGLExtract":121}],121:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -26146,7 +28791,7 @@ exports.default = WebGLExtract;
 
 core.WebGLRenderer.registerPlugin('extract', WebGLExtract);
 
-},{"../../core":51}],121:[function(require,module,exports){
+},{"../../core":52}],122:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -26555,7 +29200,7 @@ var AnimatedSprite = function (_core$Sprite) {
 
 exports.default = AnimatedSprite;
 
-},{"../core":51}],122:[function(require,module,exports){
+},{"../core":52}],123:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -27146,7 +29791,7 @@ exports.default = BitmapText;
 
 BitmapText.fonts = {};
 
-},{"../core":51,"../core/math/ObservablePoint":54,"../core/settings":87,"../core/utils":111}],123:[function(require,module,exports){
+},{"../core":52,"../core/math/ObservablePoint":55,"../core/settings":88,"../core/utils":112}],124:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -27592,7 +30237,7 @@ var TilingSprite = function (_core$Sprite) {
 
 exports.default = TilingSprite;
 
-},{"../core":51,"../core/sprites/canvas/CanvasTinter":90}],124:[function(require,module,exports){
+},{"../core":52,"../core/sprites/canvas/CanvasTinter":91}],125:[function(require,module,exports){
 'use strict';
 
 var _core = require('../core');
@@ -27996,7 +30641,7 @@ DisplayObject.prototype._cacheAsBitmapDestroy = function _cacheAsBitmapDestroy(o
     this.destroy(options);
 };
 
-},{"../core":51,"../core/textures/BaseTexture":98,"../core/textures/Texture":101,"../core/utils":111}],125:[function(require,module,exports){
+},{"../core":52,"../core/textures/BaseTexture":99,"../core/textures/Texture":102,"../core/utils":112}],126:[function(require,module,exports){
 'use strict';
 
 var _core = require('../core');
@@ -28030,7 +30675,7 @@ core.Container.prototype.getChildByName = function getChildByName(name) {
     return null;
 };
 
-},{"../core":51}],126:[function(require,module,exports){
+},{"../core":52}],127:[function(require,module,exports){
 'use strict';
 
 var _core = require('../core');
@@ -28063,7 +30708,7 @@ core.DisplayObject.prototype.getGlobalPosition = function getGlobalPosition() {
     return point;
 };
 
-},{"../core":51}],127:[function(require,module,exports){
+},{"../core":52}],128:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -28115,7 +30760,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 // imported for side effect of extending the prototype only, contains no exports
 
-},{"./AnimatedSprite":121,"./BitmapText":122,"./TilingSprite":123,"./cacheAsBitmap":124,"./getChildByName":125,"./getGlobalPosition":126,"./webgl/TilingSpriteRenderer":128}],128:[function(require,module,exports){
+},{"./AnimatedSprite":122,"./BitmapText":123,"./TilingSprite":124,"./cacheAsBitmap":125,"./getChildByName":126,"./getGlobalPosition":127,"./webgl/TilingSpriteRenderer":129}],129:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -28277,7 +30922,7 @@ exports.default = TilingSpriteRenderer;
 
 core.WebGLRenderer.registerPlugin('tilingSprite', TilingSpriteRenderer);
 
-},{"../../core":51,"../../core/const":32,"path":8}],129:[function(require,module,exports){
+},{"../../core":52,"../../core/const":33,"path":9}],130:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -28361,7 +31006,7 @@ var AlphaFilter = function (_core$Filter) {
 
 exports.default = AlphaFilter;
 
-},{"../../core":51,"path":8}],130:[function(require,module,exports){
+},{"../../core":52,"path":9}],131:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -28535,7 +31180,7 @@ var BlurFilter = function (_core$Filter) {
 
 exports.default = BlurFilter;
 
-},{"../../core":51,"./BlurXFilter":131,"./BlurYFilter":132}],131:[function(require,module,exports){
+},{"../../core":52,"./BlurXFilter":132,"./BlurYFilter":133}],132:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -28701,7 +31346,7 @@ var BlurXFilter = function (_core$Filter) {
 
 exports.default = BlurXFilter;
 
-},{"../../core":51,"./generateBlurFragSource":133,"./generateBlurVertSource":134,"./getMaxBlurKernelSize":135}],132:[function(require,module,exports){
+},{"../../core":52,"./generateBlurFragSource":134,"./generateBlurVertSource":135,"./getMaxBlurKernelSize":136}],133:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -28866,7 +31511,7 @@ var BlurYFilter = function (_core$Filter) {
 
 exports.default = BlurYFilter;
 
-},{"../../core":51,"./generateBlurFragSource":133,"./generateBlurVertSource":134,"./getMaxBlurKernelSize":135}],133:[function(require,module,exports){
+},{"../../core":52,"./generateBlurFragSource":134,"./generateBlurVertSource":135,"./getMaxBlurKernelSize":136}],134:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -28913,7 +31558,7 @@ function generateFragBlurSource(kernelSize) {
     return fragSource;
 }
 
-},{}],134:[function(require,module,exports){
+},{}],135:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -28957,7 +31602,7 @@ function generateVertBlurSource(kernelSize, x) {
     return vertSource;
 }
 
-},{}],135:[function(require,module,exports){
+},{}],136:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -28973,7 +31618,7 @@ function getMaxKernelSize(gl) {
     return kernelSize;
 }
 
-},{}],136:[function(require,module,exports){
+},{}],137:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -29524,7 +32169,7 @@ var ColorMatrixFilter = function (_core$Filter) {
 exports.default = ColorMatrixFilter;
 ColorMatrixFilter.prototype.grayscale = ColorMatrixFilter.prototype.greyscale;
 
-},{"../../core":51,"path":8}],137:[function(require,module,exports){
+},{"../../core":52,"path":9}],138:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -29634,7 +32279,7 @@ var DisplacementFilter = function (_core$Filter) {
 
 exports.default = DisplacementFilter;
 
-},{"../../core":51,"path":8}],138:[function(require,module,exports){
+},{"../../core":52,"path":9}],139:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -29688,7 +32333,7 @@ var FXAAFilter = function (_core$Filter) {
 
 exports.default = FXAAFilter;
 
-},{"../../core":51,"path":8}],139:[function(require,module,exports){
+},{"../../core":52,"path":9}],140:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -29767,7 +32412,7 @@ Object.defineProperty(exports, 'AlphaFilter', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./alpha/AlphaFilter":129,"./blur/BlurFilter":130,"./blur/BlurXFilter":131,"./blur/BlurYFilter":132,"./colormatrix/ColorMatrixFilter":136,"./displacement/DisplacementFilter":137,"./fxaa/FXAAFilter":138,"./noise/NoiseFilter":140}],140:[function(require,module,exports){
+},{"./alpha/AlphaFilter":130,"./blur/BlurFilter":131,"./blur/BlurXFilter":132,"./blur/BlurYFilter":133,"./colormatrix/ColorMatrixFilter":137,"./displacement/DisplacementFilter":138,"./fxaa/FXAAFilter":139,"./noise/NoiseFilter":141}],141:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -29864,7 +32509,7 @@ var NoiseFilter = function (_core$Filter) {
 
 exports.default = NoiseFilter;
 
-},{"../../core":51,"path":8}],141:[function(require,module,exports){
+},{"../../core":52,"path":9}],142:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -29978,7 +32623,7 @@ if (typeof _deprecation2.default === 'function') {
 global.PIXI = exports; // eslint-disable-line
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./accessibility":28,"./core":51,"./deprecation":117,"./extract":119,"./extras":127,"./filters":139,"./interaction":146,"./loaders":149,"./mesh":158,"./particles":161,"./polyfill":167,"./prepare":171}],142:[function(require,module,exports){
+},{"./accessibility":29,"./core":52,"./deprecation":118,"./extract":120,"./extras":128,"./filters":140,"./interaction":147,"./loaders":150,"./mesh":159,"./particles":162,"./polyfill":168,"./prepare":172}],143:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -30202,7 +32847,7 @@ var InteractionData = function () {
 
 exports.default = InteractionData;
 
-},{"../core":51}],143:[function(require,module,exports){
+},{"../core":52}],144:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -30287,7 +32932,7 @@ var InteractionEvent = function () {
 
 exports.default = InteractionEvent;
 
-},{}],144:[function(require,module,exports){
+},{}],145:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -32046,7 +34691,7 @@ exports.default = InteractionManager;
 core.WebGLRenderer.registerPlugin('interaction', InteractionManager);
 core.CanvasRenderer.registerPlugin('interaction', InteractionManager);
 
-},{"../core":51,"./InteractionData":142,"./InteractionEvent":143,"./InteractionTrackingData":145,"./interactiveTarget":147,"eventemitter3":3}],145:[function(require,module,exports){
+},{"../core":52,"./InteractionData":143,"./InteractionEvent":144,"./InteractionTrackingData":146,"./interactiveTarget":148,"eventemitter3":3}],146:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -32222,7 +34867,7 @@ InteractionTrackingData.FLAGS = Object.freeze({
     RIGHT_DOWN: 1 << 2
 });
 
-},{}],146:[function(require,module,exports){
+},{}],147:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -32274,7 +34919,7 @@ Object.defineProperty(exports, 'InteractionEvent', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./InteractionData":142,"./InteractionEvent":143,"./InteractionManager":144,"./InteractionTrackingData":145,"./interactiveTarget":147}],147:[function(require,module,exports){
+},{"./InteractionData":143,"./InteractionEvent":144,"./InteractionManager":145,"./InteractionTrackingData":146,"./interactiveTarget":148}],148:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -32391,7 +35036,7 @@ exports.default = {
   _trackedPointers: undefined
 };
 
-},{}],148:[function(require,module,exports){
+},{}],149:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -32483,7 +35128,7 @@ function parse(resource, texture) {
     resource.bitmapFont = _extras.BitmapText.registerFont(resource.data, texture);
 }
 
-},{"../core":51,"../extras":127,"path":8,"resource-loader":185}],149:[function(require,module,exports){
+},{"../core":52,"../extras":128,"path":9,"resource-loader":186}],150:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -32611,7 +35256,7 @@ AppPrototype.destroy = function destroy(removeView) {
     this._parentDestroy(removeView);
 };
 
-},{"../core/Application":29,"./bitmapFontParser":148,"./loader":150,"./spritesheetParser":151,"./textureParser":152,"resource-loader":185}],150:[function(require,module,exports){
+},{"../core/Application":30,"./bitmapFontParser":149,"./loader":151,"./spritesheetParser":152,"./textureParser":153,"resource-loader":186}],151:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -32782,7 +35427,7 @@ var Resource = _resourceLoader2.default.Resource;
 
 Resource.setExtensionXhrType('fnt', Resource.XHR_RESPONSE_TYPE.DOCUMENT);
 
-},{"./bitmapFontParser":148,"./spritesheetParser":151,"./textureParser":152,"eventemitter3":3,"resource-loader":185,"resource-loader/lib/middlewares/parsing/blob":186}],151:[function(require,module,exports){
+},{"./bitmapFontParser":149,"./spritesheetParser":152,"./textureParser":153,"eventemitter3":3,"resource-loader":186,"resource-loader/lib/middlewares/parsing/blob":187}],152:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -32841,7 +35486,7 @@ function getResourcePath(resource, baseUrl) {
     return _url2.default.resolve(resource.url.replace(baseUrl, ''), resource.data.meta.image);
 }
 
-},{"../core":51,"resource-loader":185,"url":187}],152:[function(require,module,exports){
+},{"../core":52,"resource-loader":186,"url":188}],153:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -32864,7 +35509,7 @@ var _Texture2 = _interopRequireDefault(_Texture);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"../core/textures/Texture":101,"resource-loader":185}],153:[function(require,module,exports){
+},{"../core/textures/Texture":102,"resource-loader":186}],154:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -33233,7 +35878,7 @@ Mesh.DRAW_MODES = {
   TRIANGLES: 1
 };
 
-},{"../core":51,"../core/textures/Texture":101}],154:[function(require,module,exports){
+},{"../core":52,"../core/textures/Texture":102}],155:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -33619,7 +36264,7 @@ var NineSlicePlane = function (_Plane) {
 
 exports.default = NineSlicePlane;
 
-},{"./Plane":155}],155:[function(require,module,exports){
+},{"./Plane":156}],156:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -33760,7 +36405,7 @@ var Plane = function (_Mesh) {
 
 exports.default = Plane;
 
-},{"./Mesh":153}],156:[function(require,module,exports){
+},{"./Mesh":154}],157:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -33996,7 +36641,7 @@ var Rope = function (_Mesh) {
 
 exports.default = Rope;
 
-},{"./Mesh":153}],157:[function(require,module,exports){
+},{"./Mesh":154}],158:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -34279,7 +36924,7 @@ exports.default = MeshSpriteRenderer;
 
 core.CanvasRenderer.registerPlugin('mesh', MeshSpriteRenderer);
 
-},{"../../core":51,"../Mesh":153}],158:[function(require,module,exports){
+},{"../../core":52,"../Mesh":154}],159:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -34340,7 +36985,7 @@ Object.defineProperty(exports, 'Rope', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./Mesh":153,"./NineSlicePlane":154,"./Plane":155,"./Rope":156,"./canvas/CanvasMeshRenderer":157,"./webgl/MeshRenderer":159}],159:[function(require,module,exports){
+},{"./Mesh":154,"./NineSlicePlane":155,"./Plane":156,"./Rope":157,"./canvas/CanvasMeshRenderer":158,"./webgl/MeshRenderer":160}],160:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -34491,7 +37136,7 @@ exports.default = MeshRenderer;
 
 core.WebGLRenderer.registerPlugin('mesh', MeshRenderer);
 
-},{"../../core":51,"../Mesh":153,"path":8,"pixi-gl-core":15}],160:[function(require,module,exports){
+},{"../../core":52,"../Mesh":154,"path":9,"pixi-gl-core":16}],161:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -34870,7 +37515,7 @@ var ParticleContainer = function (_core$Container) {
 
 exports.default = ParticleContainer;
 
-},{"../core":51,"../core/utils":111}],161:[function(require,module,exports){
+},{"../core":52,"../core/utils":112}],162:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -34895,7 +37540,7 @@ Object.defineProperty(exports, 'ParticleRenderer', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./ParticleContainer":160,"./webgl/ParticleRenderer":163}],162:[function(require,module,exports){
+},{"./ParticleContainer":161,"./webgl/ParticleRenderer":164}],163:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -35142,7 +37787,7 @@ var ParticleBuffer = function () {
 
 exports.default = ParticleBuffer;
 
-},{"../../core/utils/createIndicesForQuads":109,"pixi-gl-core":15}],163:[function(require,module,exports){
+},{"../../core/utils/createIndicesForQuads":110,"pixi-gl-core":16}],164:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -35618,7 +38263,7 @@ exports.default = ParticleRenderer;
 
 core.WebGLRenderer.registerPlugin('particle', ParticleRenderer);
 
-},{"../../core":51,"../../core/utils":111,"./ParticleBuffer":162,"./ParticleShader":164}],164:[function(require,module,exports){
+},{"../../core":52,"../../core/utils":112,"./ParticleBuffer":163,"./ParticleShader":165}],165:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -35661,7 +38306,7 @@ var ParticleShader = function (_Shader) {
 
 exports.default = ParticleShader;
 
-},{"../../core/Shader":30}],165:[function(require,module,exports){
+},{"../../core/Shader":31}],166:[function(require,module,exports){
 "use strict";
 
 // References:
@@ -35679,7 +38324,7 @@ if (!Math.sign) {
     };
 }
 
-},{}],166:[function(require,module,exports){
+},{}],167:[function(require,module,exports){
 'use strict';
 
 var _objectAssign = require('object-assign');
@@ -35694,7 +38339,7 @@ if (!Object.assign) {
 // https://github.com/sindresorhus/object-assign
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign
 
-},{"object-assign":6}],167:[function(require,module,exports){
+},{"object-assign":7}],168:[function(require,module,exports){
 'use strict';
 
 require('./Object.assign');
@@ -35719,7 +38364,7 @@ if (!window.Uint16Array) {
     window.Uint16Array = Array;
 }
 
-},{"./Math.sign":165,"./Object.assign":166,"./requestAnimationFrame":168}],168:[function(require,module,exports){
+},{"./Math.sign":166,"./Object.assign":167,"./requestAnimationFrame":169}],169:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -35796,7 +38441,7 @@ if (!global.cancelAnimationFrame) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],169:[function(require,module,exports){
+},{}],170:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -36284,7 +38929,7 @@ function findTextStyle(item, queue) {
     return false;
 }
 
-},{"../core":51,"./limiters/CountLimiter":172}],170:[function(require,module,exports){
+},{"../core":52,"./limiters/CountLimiter":173}],171:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -36404,7 +39049,7 @@ function uploadBaseTextures(prepare, item) {
 
 core.CanvasRenderer.registerPlugin('prepare', CanvasPrepare);
 
-},{"../../core":51,"../BasePrepare":169}],171:[function(require,module,exports){
+},{"../../core":52,"../BasePrepare":170}],172:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -36456,7 +39101,7 @@ Object.defineProperty(exports, 'TimeLimiter', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./BasePrepare":169,"./canvas/CanvasPrepare":170,"./limiters/CountLimiter":172,"./limiters/TimeLimiter":173,"./webgl/WebGLPrepare":174}],172:[function(require,module,exports){
+},{"./BasePrepare":170,"./canvas/CanvasPrepare":171,"./limiters/CountLimiter":173,"./limiters/TimeLimiter":174,"./webgl/WebGLPrepare":175}],173:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -36514,7 +39159,7 @@ var CountLimiter = function () {
 
 exports.default = CountLimiter;
 
-},{}],173:[function(require,module,exports){
+},{}],174:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -36572,7 +39217,7 @@ var TimeLimiter = function () {
 
 exports.default = TimeLimiter;
 
-},{}],174:[function(require,module,exports){
+},{}],175:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -36694,7 +39339,7 @@ function findGraphics(item, queue) {
 
 core.WebGLRenderer.registerPlugin('prepare', WebGLPrepare);
 
-},{"../../core":51,"../BasePrepare":169}],175:[function(require,module,exports){
+},{"../../core":52,"../BasePrepare":170}],176:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -36880,7 +39525,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],176:[function(require,module,exports){
+},{}],177:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.4.1 by @mathias */
 ;(function(root) {
@@ -37417,7 +40062,7 @@ process.umask = function() { return 0; };
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],177:[function(require,module,exports){
+},{}],178:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -37503,7 +40148,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],178:[function(require,module,exports){
+},{}],179:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -37590,13 +40235,13 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],179:[function(require,module,exports){
+},{}],180:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":177,"./encode":178}],180:[function(require,module,exports){
+},{"./decode":178,"./encode":179}],181:[function(require,module,exports){
 'use strict'
 
 /**
@@ -37626,7 +40271,7 @@ module.exports = function removeItems(arr, startIdx, removeCount)
   arr.length = len
 }
 
-},{}],181:[function(require,module,exports){
+},{}],182:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -38244,7 +40889,7 @@ var Loader = function () {
 
 exports.default = Loader;
 
-},{"./Resource":182,"./async":183,"mini-signals":5,"parse-uri":7}],182:[function(require,module,exports){
+},{"./Resource":183,"./async":184,"mini-signals":6,"parse-uri":8}],183:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -39400,7 +42045,7 @@ function reqType(xhr) {
     return xhr.toString().replace('object ', '');
 }
 
-},{"mini-signals":5,"parse-uri":7}],183:[function(require,module,exports){
+},{"mini-signals":6,"parse-uri":8}],184:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -39609,7 +42254,7 @@ function queue(worker, concurrency) {
     return q;
 }
 
-},{}],184:[function(require,module,exports){
+},{}],185:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -39677,7 +42322,7 @@ function encodeBinary(input) {
     return output;
 }
 
-},{}],185:[function(require,module,exports){
+},{}],186:[function(require,module,exports){
 'use strict';
 
 // import Loader from './Loader';
@@ -39701,7 +42346,7 @@ module.exports = Loader;
 // export default Loader;
 module.exports.default = Loader;
 
-},{"./Loader":181,"./Resource":182,"./async":183,"./b64":184}],186:[function(require,module,exports){
+},{"./Loader":182,"./Resource":183,"./async":184,"./b64":185}],187:[function(require,module,exports){
 'use strict';
 
 exports.__esModule = true;
@@ -39789,7 +42434,7 @@ function blobMiddlewareFactory() {
     };
 }
 
-},{"../../Resource":182,"../../b64":184}],187:[function(require,module,exports){
+},{"../../Resource":183,"../../b64":185}],188:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -40523,7 +43168,7 @@ Url.prototype.parseHost = function() {
   if (host) this.hostname = host;
 };
 
-},{"./util":188,"punycode":176,"querystring":179}],188:[function(require,module,exports){
+},{"./util":189,"punycode":177,"querystring":180}],189:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -40541,49 +43186,74 @@ module.exports = {
   }
 };
 
-},{}],189:[function(require,module,exports){
+},{}],190:[function(require,module,exports){
 
 const PIXI = require("pixi.js")
 
 const makeblock = _ => {
   const container = new PIXI.Container()
-  const block = new PIXI.Sprite(PIXI.Texture.fromImage("assets/square00.png"))
-  const style = { fontFamily: "Courier", fontSize: "48", fill: 0xffffff, align: "center" }
+  const square = new PIXI.Sprite(PIXI.Texture.fromImage("assets/square00.png"))
+  const style = { fontFamily: "Courier", fontSize: "48px", fill: 0xffffff, align: "center" }
   const label = new PIXI.Text("", style)
 
-  container.addChild(block)
+  container.addChild(square)
   container.addChild(label)
-  block.anchor.set(0.5, 0.5)
+  square.anchor.set(0.5, 0.5)
   label.anchor.set(0.5, 0.5)
+
+  const power0 = _ => {
+    label.text = " "
+    square.texture = PIXI.Texture.fromImage("assets/square00.png")
+
+  }
+
+  const power2 = _ => {
+    label.text = "2"
+    square.texture = PIXI.Texture.fromImage("assets/square01.png")
+  }
+
+  const hit = block => {
+    if (block.label.text == " ") {
+      block.label.text = label.text
+      block.square.texture = square.texture
+      power0()
+    } else if (label.text == "2") {
+      console.log("hit")
+    }
+  }
 
   return {
     container,
-    block,
-    label
+    square,
+    label,
+    power2,
+    hit
   }
 }
 
 exports.makeblock = makeblock
-},{"pixi.js":141}],190:[function(require,module,exports){
+},{"pixi.js":142}],191:[function(require,module,exports){
 
 const PIXI = require("pixi.js")
-const board = new PIXI.Sprite(PIXI.Texture.fromImage("assets/board.png"))
-const style = { fontFamily: "Courier", fontSize: "48", fill: 0xffffff, align: "center" }
+const back = new PIXI.Sprite(PIXI.Texture.fromImage("assets/board.png"))
+const style = { fontFamily: "Courier", fontSize: "32px", fill: 0xffffff, align: "center" }
 const score = new PIXI.Text("0", style)
 const container = new PIXI.Container()
 const makeblock = require("./block").makeblock
+const Hammer = require("hammerjs")
 
-container.addChild(board)
+container.addChild(back)
 container.addChild(score)
 container.position.set(window.innerWidth / 2, window.innerHeight / 2)
 window.addEventListener("resize", _ => container.position.set(window.innerWidth / 2, window.innerHeight / 2))
-board.anchor.set(0.5, 0.5)
+back.anchor.set(0.5, 0.5)
 score.position.set(-window.innerWidth / 7, -window.innerHeight / 5)
 
 const getX = (j, i) => -120 + 80 * i
 const getY = (j, i) => -120 + 80 * j
 
 const grid = [[], [], [], []]
+const list = []
 let j = 4;
 while (j--) {
   let i = 4;
@@ -40592,21 +43262,73 @@ while (j--) {
     e.container.position.x = getX(j, i)
     e.container.position.y = getY(j, i)
     grid[j][i] = e
+    list.push(e)
     container.addChild(e.container)
   }
 }
 
+const randseed = _ => {
+  let anyfree = false
+  let i = list.length
+  while (i--)
+    if (list[i].label.text == " ")
+      anyfree = true
+  if (anyfree) {
+    i = Math.round(Math.random() * list.length)
+    if (i >= list.length) i--
+    list[i].power2()
+  }
+}
+
+const mc = new Hammer(document.body)
+mc.get("swipe").set({ direction: Hammer.DIRECTION_ALL })
+
+mc.on("swipe", ev => {
+  console.log(ev)
+})
+
+
+const shakeup = _ => {
+  let i = 4
+  while (i-- > 1) {
+    let j = 4
+    while (j--) {
+      grid[i][j].hit(grid[i - 1][j])
+    }
+  }
+  // randseed()
+}
+const shakedown = _ => {
+  let i = -1
+  while (++i < 3) {
+    let j = 4
+    while (j--) {
+      grid[i + 1][j].hit(grid[i][j])
+    }
+
+  }
+}
+const shakeleft = _ => { }
+const shakeright = _ => { }
+
+back.interactive = true
+
+
 exports.score = score
-exports.board = board
+exports.back = back
 exports.container = container
+exports.randseed = randseed
 
-},{"./block":189,"pixi.js":141}],191:[function(require,module,exports){
+},{"./block":190,"hammerjs":4,"pixi.js":142}],192:[function(require,module,exports){
+// entry point
 const PIXI = require("pixi.js")
-
 const app = new PIXI.Application(window.innerWidth, window.innerHeight)
+const board = require("./board")
 
 document.getElementById("app").appendChild(app.view);
 window.addEventListener("resize", _ => app.renderer.resize(window.innerWidth, window.innerHeight))
 
-app.stage.addChild(require("./board").container)
-},{"./board":190,"pixi.js":141}]},{},[191]);
+app.stage.addChild(board.container)
+
+board.randseed()
+},{"./board":191,"pixi.js":142}]},{},[192]);

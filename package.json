@@ -22,6 +22,7 @@
   "homepage": "https://github.com/sombriks/yet-another-2048#readme",
   "browserify": {},
   "dependencies": {
+    "hammerjs": "^2.0.8",
     "pixi.js": "^4.6.2"
   },
   "devDependencies": {

@@ -1,0 +1,31 @@
+{
+  "name": "yet-another-2048",
+  "version": "1.0.0",
+  "description": "Another 2048 clone made to exercise PIXI skills and for fun",
+  "main": "index.js",
+  "scripts": {
+    "dev": "budo src/main.js:build.js -l -o -H 127.0.0.1",
+    "prepare": "rm -rf docs ; mkdir docs ; cp -R assets docs/assets ; cp index.html docs/index.html",
+    "build": "browserify src/main.js -o docs/build.js",
+    "release": "npm run prepare ; npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://sombriks@github.com/sombriks/yet-another-2048.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sombriks/yet-another-2048/issues"
+  },
+  "homepage": "https://github.com/sombriks/yet-another-2048#readme",
+  "browserify": {},
+  "dependencies": {
+    "pixi.js": "^4.6.2"
+  },
+  "devDependencies": {
+    "browserify": "^14.5.0",
+    "budo": "^10.0.4"
+  }
+}

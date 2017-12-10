@@ -43193,7 +43193,7 @@ const PIXI = require("pixi.js")
 const makeblock = _ => {
   const container = new PIXI.Container()
   const square = new PIXI.Sprite(PIXI.Texture.fromImage("assets/square00.png"))
-  const style = { fontFamily: "Courier", fontSize: "48px", fill: 0xffffff, align: "center" }
+  const style = { fontFamily: "Courier", fontSize: "32px", fill: 0xffffff, align: "center" }
   const label = new PIXI.Text("", style)
 
   container.addChild(square)
@@ -43204,30 +43204,132 @@ const makeblock = _ => {
   const power0 = _ => {
     label.text = " "
     square.texture = PIXI.Texture.fromImage("assets/square00.png")
-
+    return 0
   }
 
   const power2 = _ => {
     label.text = "2"
     square.texture = PIXI.Texture.fromImage("assets/square01.png")
+    return 1
+  }
+
+  const power4 = _ => {
+    label.text = "4"
+    square.texture = PIXI.Texture.fromImage("assets/square02.png")
+    return 5
+  }
+
+  const power8 = _ => {
+    label.text = "8"
+    square.texture = PIXI.Texture.fromImage("assets/square03.png")
+    return 10
+  }
+
+  const power16 = _ => {
+    label.text = "16"
+    square.texture = PIXI.Texture.fromImage("assets/square04.png")
+    return 50
+  }
+
+  const power32 = _ => {
+    label.text = "32"
+    square.texture = PIXI.Texture.fromImage("assets/square05.png")
+    return 100
+  }
+
+  const power64 = _ => {
+    label.text = "64"
+    square.texture = PIXI.Texture.fromImage("assets/square06.png")
+    return 500
+  }
+
+  const power128 = _ => {
+    label.text = "128"
+    square.texture = PIXI.Texture.fromImage("assets/square07.png")
+    return 1000
+  }
+
+  const power256 = _ => {
+    label.text = "256"
+    square.texture = PIXI.Texture.fromImage("assets/square08.png")
+    return 5000
+  }
+
+  const power512 = _ => {
+    label.text = "512"
+    square.texture = PIXI.Texture.fromImage("assets/square09.png")
+    return 10000
+  }
+
+  const power1024 = _ => {
+    label.text = "1024"
+    square.texture = PIXI.Texture.fromImage("assets/square10.png")
+    return 50000
+  }
+
+  const power2048 = _ => {
+    label.text = "2048"
+    square.texture = PIXI.Texture.fromImage("assets/square11.png")
+    return 100000
   }
 
   const hit = block => {
     if (block.label.text == " ") {
       block.label.text = label.text
       block.square.texture = square.texture
-      power0()
-    } else if (label.text == "2") {
-      console.log("hit")
+      return power0()
+    } else if (label.text == block.label.text) {
+      if (label.text == "2") {
+        power0()
+        return block.power4()
+      } else if (label.text == "4") {
+        power0()
+        return block.power8()
+      } else if (label.text == "8") {
+        power0()
+        return block.power16()
+      } else if (label.text == "16") {
+        power0()
+        return block.power32()
+      } else if (label.text == "32") {
+        power0()
+        return block.power64()
+      } else if (label.text == "64") {
+        power0()
+        return block.power128()
+      } else if (label.text == "128") {
+        power0()
+        return block.power256()
+      } else if (label.text == "256") {
+        power0()
+        return block.power512()
+      } else if (label.text == "512") {
+        power0()
+        return block.power1024()
+      } else if (label.text == "1024") {
+        power0()
+        return block.power2048()
+      } 
     }
+    return 0
   }
 
   return {
     container,
     square,
     label,
+    hit,
     power2,
-    hit
+    power4,
+    power8,
+    power16,
+    power32,
+    power64,
+    power128,
+    power256,
+    power512,
+    power1024,
+    power2048
   }
 }
 
@@ -43240,7 +43342,8 @@ const style = { fontFamily: "Courier", fontSize: "32px", fill: 0xffffff, align: 
 const score = new PIXI.Text("0", style)
 const container = new PIXI.Container()
 const makeblock = require("./block").makeblock
-const Hammer = require("hammerjs")
+
+let points = 0
 
 container.addChild(back)
 container.addChild(score)
@@ -43270,71 +43373,87 @@ while (j--) {
 const randseed = _ => {
   let anyfree = false
   let i = list.length
-  while (i--)
+  let freeblocks = []
+  while (i-- > 0)
     if (list[i].label.text == " ")
-      anyfree = true
-  if (anyfree) {
-    i = Math.round(Math.random() * list.length)
-    if (i >= list.length) i--
-    list[i].power2()
+      freeblocks.push(list[i])
+  if (freeblocks.length > 0) {
+    i = Math.floor(Math.random() * freeblocks.length)
+    freeblocks[i].power2()
+  } else {
+    // game over!
+    alert("Game over!")
+    window.location.reload()
   }
 }
 
 const shakeup = _ => {
   console.log("UP")
+  let moved = false
   let i = 4
   while (i-- > 1) {
     let j = 4
     while (j--) {
-      grid[i][j].hit(grid[i - 1][j])
+      points += grid[i][j].hit(grid[i - 1][j])
     }
   }
-  // randseed()
+  score.text = points
+  return moved
 }
+
 const shakedown = _ => {
   console.log("DOWN")
+  let moved = false
   let i = -1
   while (++i < 3) {
     let j = -1
     while (++j < 4) {
-      grid[i][j].hit(grid[i + 1][j])
+      points += grid[i][j].hit(grid[i + 1][j])
     }
-
   }
+  score.text = points
+  return moved
 }
 const shakeleft = _ => {
-
   console.log("LEFT")
+  let moved = false
+  let j = 4;
+  while (j-- > 1) {
+    let i = 4;
+    while (i--) {
+      points += grid[i][j].hit(grid[i][j - 1])
+    }
+  }
+  score.text = points
+  return moved
 }
 const shakeright = _ => {
-
   console.log("RIGHT")
-}
-
-const mc = new Hammer(document.body)
-mc.get("swipe").set({ direction: Hammer.DIRECTION_ALL })
-
-mc.on("swipe", ev => {
-  console.log(ev.angle)
-  if (ev.angle >= 0) {
-    if (ev.angle < 45) shakeright()
-    else if (ev.angle < 135) shakedown()
-    else shakeleft()
-  } else {
-    if (ev.angle > -45) shakeright()
-    else if (ev.angle > -135) shakeup()
-    else shakeleft()
+  let moved = false
+  let j = -1;
+  while (++j < 3) {
+    let i = -1;
+    while (++i < 4) {
+      points += grid[i][j].hit(grid[i][j + 1])
+    }
   }
-})
+  score.text = points
+  return moved
+}
 
 exports.score = score
 exports.back = back
 exports.container = container
 exports.randseed = randseed
+exports.shakeup = shakeup
+exports.shakedown = shakedown
+exports.shakeleft = shakeleft
+exports.shakeright = shakeright
 
-},{"./block":190,"hammerjs":4,"pixi.js":142}],192:[function(require,module,exports){
+},{"./block":190,"pixi.js":142}],192:[function(require,module,exports){
 // entry point
 const PIXI = require("pixi.js")
+const Hammer = require("hammerjs")
 const app = new PIXI.Application(window.innerWidth, window.innerHeight)
 const board = require("./board")
 
@@ -43344,4 +43463,20 @@ window.addEventListener("resize", _ => app.renderer.resize(window.innerWidth, wi
 app.stage.addChild(board.container)
 
 board.randseed()
-},{"./board":191,"pixi.js":142}]},{},[192]);
+
+const mc = new Hammer(document.body)
+mc.get("swipe").set({ direction: Hammer.DIRECTION_ALL })
+mc.on("swipe", ev => {
+  console.log(ev.angle)
+  if (ev.angle >= 0) {
+    if (ev.angle < 45) board.shakeright()
+    else if (ev.angle < 135) board.shakedown()
+    else board.shakeleft()
+  } else {
+    if (ev.angle > -45) board.shakeright()
+    else if (ev.angle > -135) board.shakeup()
+    else board.shakeleft()
+  }
+  board.randseed()
+})
+},{"./board":191,"hammerjs":4,"pixi.js":142}]},{},[192]);

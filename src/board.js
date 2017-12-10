@@ -5,7 +5,8 @@ const style = { fontFamily: "Courier", fontSize: "32px", fill: 0xffffff, align: 
 const score = new PIXI.Text("0", style)
 const container = new PIXI.Container()
 const makeblock = require("./block").makeblock
-const Hammer = require("hammerjs")
+
+let points = 0
 
 container.addChild(back)
 container.addChild(score)
@@ -35,64 +36,79 @@ while (j--) {
 const randseed = _ => {
   let anyfree = false
   let i = list.length
-  while (i--)
+  let freeblocks = []
+  while (i-- > 0)
     if (list[i].label.text == " ")
-      anyfree = true
-  if (anyfree) {
-    i = Math.round(Math.random() * list.length)
-    if (i >= list.length) i--
-    list[i].power2()
+      freeblocks.push(list[i])
+  if (freeblocks.length > 0) {
+    i = Math.floor(Math.random() * freeblocks.length)
+    freeblocks[i].power2()
+  } else {
+    // game over!
+    alert("Game over!")
+    window.location.reload()
   }
 }
 
 const shakeup = _ => {
   console.log("UP")
+  let moved = false
   let i = 4
   while (i-- > 1) {
     let j = 4
     while (j--) {
-      grid[i][j].hit(grid[i - 1][j])
+      points += grid[i][j].hit(grid[i - 1][j])
     }
   }
-  // randseed()
+  score.text = points
+  return moved
 }
+
 const shakedown = _ => {
   console.log("DOWN")
+  let moved = false
   let i = -1
   while (++i < 3) {
     let j = -1
     while (++j < 4) {
-      grid[i][j].hit(grid[i + 1][j])
+      points += grid[i][j].hit(grid[i + 1][j])
     }
-
   }
+  score.text = points
+  return moved
 }
 const shakeleft = _ => {
-
   console.log("LEFT")
+  let moved = false
+  let j = 4;
+  while (j-- > 1) {
+    let i = 4;
+    while (i--) {
+      points += grid[i][j].hit(grid[i][j - 1])
+    }
+  }
+  score.text = points
+  return moved
 }
 const shakeright = _ => {
-
   console.log("RIGHT")
-}
-
-const mc = new Hammer(document.body)
-mc.get("swipe").set({ direction: Hammer.DIRECTION_ALL })
-
-mc.on("swipe", ev => {
-  console.log(ev.angle)
-  if (ev.angle >= 0) {
-    if (ev.angle < 45) shakeright()
-    else if (ev.angle < 135) shakedown()
-    else shakeleft()
-  } else {
-    if (ev.angle > -45) shakeright()
-    else if (ev.angle > -135) shakeup()
-    else shakeleft()
+  let moved = false
+  let j = -1;
+  while (++j < 3) {
+    let i = -1;
+    while (++i < 4) {
+      points += grid[i][j].hit(grid[i][j + 1])
+    }
   }
-})
+  score.text = points
+  return moved
+}
 
 exports.score = score
 exports.back = back
 exports.container = container
 exports.randseed = randseed
+exports.shakeup = shakeup
+exports.shakedown = shakedown
+exports.shakeleft = shakeleft
+exports.shakeright = shakeright

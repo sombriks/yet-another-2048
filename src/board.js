@@ -10,10 +10,20 @@ let points = 0
 
 container.addChild(back)
 container.addChild(score)
+
 container.position.set(window.innerWidth / 2, window.innerHeight / 2)
-window.addEventListener("resize", _ => container.position.set(window.innerWidth / 2, window.innerHeight / 2))
+score.position.set(-160, -256)
+
+window.addEventListener("resize", _ => {
+  let w = window.innerWidth
+  let h = window.innerHeight
+  container.position.set(w / 2, h / 2)
+  if (h > w)
+    score.position.set(-160, -256)
+  else
+    score.position.set(-256, -160)
+})
 back.anchor.set(0.5, 0.5)
-score.position.set(-window.innerWidth / 7, -window.innerHeight / 5)
 
 const getX = (j, i) => -120 + 80 * i
 const getY = (j, i) => -120 + 80 * j

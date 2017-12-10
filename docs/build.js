@@ -43280,15 +43280,8 @@ const randseed = _ => {
   }
 }
 
-const mc = new Hammer(document.body)
-mc.get("swipe").set({ direction: Hammer.DIRECTION_ALL })
-
-mc.on("swipe", ev => {
-  console.log(ev)
-})
-
-
 const shakeup = _ => {
+  console.log("UP")
   let i = 4
   while (i-- > 1) {
     let j = 4
@@ -43299,20 +43292,40 @@ const shakeup = _ => {
   // randseed()
 }
 const shakedown = _ => {
+  console.log("DOWN")
   let i = -1
   while (++i < 3) {
-    let j = 4
-    while (j--) {
-      grid[i + 1][j].hit(grid[i][j])
+    let j = -1
+    while (++j < 4) {
+      grid[i][j].hit(grid[i + 1][j])
     }
 
   }
 }
-const shakeleft = _ => { }
-const shakeright = _ => { }
+const shakeleft = _ => {
 
-back.interactive = true
+  console.log("LEFT")
+}
+const shakeright = _ => {
 
+  console.log("RIGHT")
+}
+
+const mc = new Hammer(document.body)
+mc.get("swipe").set({ direction: Hammer.DIRECTION_ALL })
+
+mc.on("swipe", ev => {
+  console.log(ev.angle)
+  if (ev.angle >= 0) {
+    if (ev.angle < 45) shakeright()
+    else if (ev.angle < 135) shakedown()
+    else shakeleft()
+  } else {
+    if (ev.angle > -45) shakeright()
+    else if (ev.angle > -135) shakeup()
+    else shakeleft()
+  }
+})
 
 exports.score = score
 exports.back = back
